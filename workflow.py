@@ -32,7 +32,7 @@ WORKFLOW_BASE = {
   },
   "5": {
     "inputs": {
-      "clip_name": "qwen_3_8b_fp8mixed.safetensors",
+      "clip_name": "clip_l.safetensors",
       "type": "flux2",
       "device": "default"
     },
@@ -48,7 +48,7 @@ WORKFLOW_BASE = {
   },
   "7": {
     "inputs": {
-      "vae_name": "full_encoder_small_decoder.safetensors"
+      "vae_name": "ae.safetensors"
     },
     "class_type": "VAELoader"
   },
@@ -179,7 +179,7 @@ WORKFLOW_BASE = {
   },
   "25": {
     "inputs": {
-      "model_name": "miracleinNSFWGeneration_30Bf16Fp8.safetensors",
+      "model_name": "flux1-dev-fp8.safetensors",
       "weight_dtype": "default",
       "compute_dtype": "default",
       "patch_cublaslinear": False,

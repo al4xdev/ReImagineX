@@ -12,11 +12,11 @@
 
 | Modelo | Tipo | Usado em |
 |---|---|---|
-| `miracleinNSFWGeneration_30Bf16Fp8.safetensors` | Diffusion (Flux2) | `config.py`, node 25 |
-| `qwen_3_8b_fp8mixed.safetensors` | CLIP (flux2) | node 5 |
-| `full_encoder_small_decoder.safetensors` | VAE | node 7 |
+| `flux1-dev-fp8.safetensors` | Diffusion (Flux2) | `config.py`, node 25 |
+| `clip_l.safetensors` | CLIP (flux2) | node 5 |
+| `ae.safetensors` | VAE | node 7 |
 | `4x_foolhardy_Remacri.pth` | Upscale (output) | `config.py`, node 16 |
-| `4x-UltraSharp.pth` | Upscale (input) | node 27 |
+| `4x_foolhardy_Remacri.pth` | Upscale (input) | node 27 |
 
 ### Custom Nodes necessários no ComfyUI
 

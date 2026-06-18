@@ -25,9 +25,9 @@ class Settings(BaseSettings):
         "cognitivecomputations/dolphin-mistral-24b-venice-edition:free",
         "deepseek/deepseek-v4-flash"
     ]
-    diffusion_model_name: str = "miracleinNSFWGeneration_30Bf16Fp8.safetensors"
-    clip_model_name: str = "qwen_3_8b_fp8mixed.safetensors"
-    vae_model_name: str = "full_encoder_small_decoder.safetensors"
+    diffusion_model_name: str = "flux1-dev-fp8.safetensors"
+    clip_model_name: str = "clip_l.safetensors"
+    vae_model_name: str = "ae.safetensors"
     upscale_model_name: str = "4x_foolhardy_Remacri.pth"
     input_upscale_model_name: str = "4x_foolhardy_Remacri.pth"
 

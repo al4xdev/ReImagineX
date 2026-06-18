@@ -80,9 +80,9 @@ Ensure the following models are downloaded and placed in the respective folders 
 
 | Model File | Target Subfolder | Type | Description |
 |---|---|---|---|
-| `miracleinNSFWGeneration_30Bf16Fp8.safetensors` | `models/checkpoints/` | Diffusion (Flux2) | Main generation model |
-| `qwen_3_8b_fp8mixed.safetensors` | `models/clip/` | CLIP | Language understanding model |
-| `full_encoder_small_decoder.safetensors` | `models/vae/` | VAE | Image encoding and decoding |
+| `flux1-dev-fp8.safetensors` | `models/checkpoints/` | Diffusion (Flux2) | Main generation model |
+| `clip_l.safetensors` | `models/clip/` | CLIP | Language understanding model |
+| `ae.safetensors` | `models/vae/` | VAE | Image encoding and decoding |
 | `4x_foolhardy_Remacri.pth` | `models/upscale_models/` | Upscale | Standard model used for upscaling |
 
 ### Required Custom Nodes
