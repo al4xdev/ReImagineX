@@ -61,7 +61,13 @@ OPENROUTER_API_KEY=your_api_key_here
 
 ### 4. Running the Web App
 
-Launch the local development web server:
+You can quickly boot the server by running the startup script:
+
+```bash
+./start.sh
+```
+
+Alternatively, launch the local development web server manually:
 
 ```bash
 uv run python server.py
