@@ -1,0 +1,290 @@
+{
+  "1": {
+    "inputs": {
+      "cfg": 1,
+      "model": [
+        "25",
+        0
+      ],
+      "positive": [
+        "19",
+        0
+      ],
+      "negative": [
+        "21",
+        0
+      ]
+    },
+    "class_type": "CFGGuider"
+  },
+  "2": {
+    "inputs": {
+      "text": "PROMPT_HERE",
+      "clip": [
+        "5",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode"
+  },
+  "3": {
+    "inputs": {
+      "filename_prefix": "Flux2-Klein-Edit",
+      "images": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "SaveImage"
+  },
+  "4": {
+    "inputs": {
+      "sampler_name": "euler"
+    },
+    "class_type": "KSamplerSelect"
+  },
+  "5": {
+    "inputs": {
+      "clip_name": "clip_l.safetensors",
+      "type": "flux2",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader"
+  },
+  "6": {
+    "inputs": {
+      "steps": 4,
+      "width": [
+        "9",
+        0
+      ],
+      "height": [
+        "9",
+        1
+      ]
+    },
+    "class_type": "Flux2Scheduler"
+  },
+  "7": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader"
+  },
+  "8": {
+    "inputs": {
+      "value": 1
+    },
+    "class_type": "PrimitiveInt"
+  },
+  "9": {
+    "inputs": {
+      "image": [
+        "23",
+        0
+      ]
+    },
+    "class_type": "GetImageSize"
+  },
+  "10": {
+    "inputs": {
+      "noise": [
+        "11",
+        0
+      ],
+      "guider": [
+        "1",
+        0
+      ],
+      "sampler": [
+        "4",
+        0
+      ],
+      "sigmas": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "12",
+        0
+      ]
+    },
+    "class_type": "SamplerCustomAdvanced"
+  },
+  "11": {
+    "inputs": {
+      "noise_seed": [
+        "15",
+        0
+      ]
+    },
+    "class_type": "RandomNoise"
+  },
+  "12": {
+    "inputs": {
+      "width": [
+        "9",
+        0
+      ],
+      "height": [
+        "9",
+        1
+      ],
+      "batch_size": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "EmptyFlux2LatentImage"
+  },
+  "13": {
+    "inputs": {
+      "samples": [
+        "10",
+        0
+      ],
+      "vae": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "VAEDecode"
+  },
+  "14": {
+    "inputs": {
+      "pixels": [
+        "23",
+        0
+      ],
+      "vae": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "VAEEncode"
+  },
+  "15": {
+    "inputs": {
+      "seed": 0
+    },
+    "class_type": "Seed (rgthree)"
+  },
+  "16": {
+    "inputs": {
+      "model_name": "4x_foolhardy_Remacri.pth"
+    },
+    "class_type": "UpscaleModelLoader"
+  },
+  "17": {
+    "inputs": {
+      "rgthree_comparer": {
+        "images": [
+          {
+            "name": "A",
+            "selected": true,
+            "url": ""
+          },
+          {
+            "name": "B",
+            "selected": true,
+            "url": ""
+          }
+        ]
+      },
+      "image_a": [
+        "18",
+        0
+      ],
+      "image_b": [
+        "22",
+        0
+      ]
+    },
+    "class_type": "Image Comparer (rgthree)"
+  },
+  "18": {
+    "inputs": {
+      "upscale_model": [
+        "16",
+        0
+      ],
+      "image": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "ImageUpscaleWithModel"
+  },
+  "19": {
+    "inputs": {
+      "conditioning": [
+        "2",
+        0
+      ],
+      "latent": [
+        "14",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "20": {
+    "inputs": {
+      "conditioning": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "ConditioningZeroOut"
+  },
+  "21": {
+    "inputs": {
+      "conditioning": [
+        "20",
+        0
+      ],
+      "latent": [
+        "14",
+        0
+      ]
+    },
+    "class_type": "ReferenceLatent"
+  },
+  "22": {
+    "inputs": {
+      "image": "BASE_IMAGE_HERE"
+    },
+    "class_type": "LoadImage"
+  },
+  "23": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1,
+      "image": [
+        "22",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "24": {
+    "inputs": {
+      "upscale_method": "nearest-exact",
+      "megapixels": 1,
+      "resolution_steps": 1
+    },
+    "class_type": "ImageScaleToTotalPixels"
+  },
+  "25": {
+    "inputs": {
+      "model_name": "flux1-dev-fp8.safetensors",
+      "weight_dtype": "default",
+      "compute_dtype": "default",
+      "patch_cublaslinear": false,
+      "sage_attention": "sageattn3",
+      "enable_fp16_accumulation": false
+    },
+    "class_type": "DiffusionModelLoaderKJ"
+  }
+}

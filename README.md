@@ -79,6 +79,9 @@ The application will be accessible at: `http://localhost:8888`
 
 ## ✦ ComfyUI Backend Setup
 
+> [!TIP]
+> A pre-configured API workflow template is available in the project root as [workflow_api.json](file:///home/alex/git/my/imagine_no/workflow_api.json). You can load this file into your ComfyUI interface. If you are missing any custom nodes, use the **ComfyUI Manager** and click **Install Missing Custom Nodes** to install all required dependencies automatically.
+
 For the generation workflows to validate successfully, your ComfyUI environment must meet the following configuration requirements:
 
 ### Required Models
