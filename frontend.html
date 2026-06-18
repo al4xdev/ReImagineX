@@ -1130,6 +1130,18 @@ function updateModalContent() {
 
 let isTransitioning = false;
 
+function hasNextImage() {
+  let next = modalIndex + 1;
+  while (next < galleryItems.length && galleryItems[next].status !== 'completed') next++;
+  return next < galleryItems.length;
+}
+
+function hasPrevImage() {
+  let prev = modalIndex - 1;
+  while (prev >= 0 && galleryItems[prev].status !== 'completed') prev--;
+  return prev >= 0;
+}
+
 function slideNext() {
   if (isTransitioning) return;
   let next = modalIndex + 1;
@@ -1277,9 +1289,15 @@ imageModal.addEventListener('touchmove', (e) => {
   if (gestureLocked === 'horizontal') {
     if (isTransitioning) return;
     
+    let targetDx = dx;
+    // Apply rubber-band resistance if dragging past limits
+    if ((dx > 0 && !hasPrevImage()) || (dx < 0 && !hasNextImage())) {
+      targetDx = dx * 0.35; 
+    }
+    
     // Drag image horizontally with slight scale down on extreme drags
-    viewImage.style.transform = `translateX(${dx}px) scale(${1 - Math.abs(dx) / (window.innerWidth * 3.5)})`;
-    viewImage.style.opacity = `${1 - Math.abs(dx) / 380}`;
+    viewImage.style.transform = `translateX(${targetDx}px) scale(${1 - Math.abs(targetDx) / (window.innerWidth * 3.5)})`;
+    viewImage.style.opacity = `${1 - Math.abs(targetDx) / 380}`;
   } 
   else if (gestureLocked === 'vertical') {
     if (isDrawerOpen) {
@@ -1317,9 +1335,9 @@ imageModal.addEventListener('touchend', (e) => {
   viewImage.style.transition = 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease';
   
   if (gestureLocked === 'horizontal' && !isTransitioning) {
-    if (dx < -80) {
+    if (dx < -80 && hasNextImage()) {
       slideNext();
-    } else if (dx > 80) {
+    } else if (dx > 80 && hasPrevImage()) {
       slidePrev();
     } else {
       // Snap image back to center
