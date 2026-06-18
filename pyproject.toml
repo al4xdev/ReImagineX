@@ -1,0 +1,16 @@
+[project]
+name = "reimaginex"
+version = "1.3.0"
+description = "Image-to-image generation gallery with ComfyUI backend and LLM prompt expansion"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.137",
+    "uvicorn>=0.49",
+    "httpx>=0.28",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.14",
+    "pillow>=11",
+]
+
+[tool.uv]
+dev-dependencies = []

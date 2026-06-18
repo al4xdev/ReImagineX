@@ -1,0 +1,1723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ReImagineX</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #000;
+    color: #f3f4f6;
+    min-height: 100dvh;
+    -webkit-tap-highlight-color: transparent;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ── Fullscreen modal ───────────────────────────────────────────── */
+  #imageModal {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    background: #000;
+    z-index: 9999;
+    flex-direction: column;
+    overflow: hidden;
+    display: flex;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: scale(0.96);
+    transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.3s;
+    padding-top:    env(safe-area-inset-top,    0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left:   env(safe-area-inset-left,   0px);
+    padding-right:  env(safe-area-inset-right,  0px);
+  }
+
+  #imageModal.open {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: scale(1);
+  }
+
+  #modalTopBar {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px 8px;
+    background: #000;
+  }
+
+  #modalImageContainer {
+    flex: 1 1 0;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    background: #000;
+  }
+
+  #viewFullImage {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    user-select: none;
+    -webkit-user-drag: none;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+  }
+
+  /* Slide Transitions */
+  .slide-out-left {
+    animation: slideOutLeft 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+  .slide-in-right {
+    animation: slideInRight 0.22s cubic-bezier(0, 0, 0.2, 1) forwards;
+  }
+  .slide-out-right {
+    animation: slideOutRight 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+  }
+  .slide-in-left {
+    animation: slideInLeft 0.22s cubic-bezier(0, 0, 0.2, 1) forwards;
+  }
+
+  @keyframes slideOutLeft {
+    to {
+      opacity: 0;
+      transform: translateX(-80px) scale(0.96);
+    }
+  }
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(80px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+  @keyframes slideOutRight {
+    to {
+      opacity: 0;
+      transform: translateX(80px) scale(0.96);
+    }
+  }
+  @keyframes slideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-80px) scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) scale(1);
+    }
+  }
+
+  /* Details Drawer */
+  #detailsDrawer {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(10, 10, 10, 0.95);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 100;
+    padding: 24px 16px env(safe-area-inset-bottom, 16px);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  #detailsDrawer.open {
+    transform: translateY(0);
+  }
+
+  #btnToggleDrawer {
+    position: absolute;
+    top: -36px;
+    right: 16px;
+    background: rgba(10, 10, 10, 0.85);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-bottom: none;
+    border-radius: 8px 8px 0 0;
+    padding: 8px 16px;
+    color: #e5e7eb;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: 0 -4px 12px rgba(0,0,0,0.5);
+    z-index: 101;
+    white-space: nowrap;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  #btnToggleDrawer:hover {
+    background: rgba(31, 41, 55, 0.9);
+    color: #fff;
+    transform: translateY(-2px);
+    box-shadow: 0 -6px 16px rgba(0,0,0,0.6);
+  }
+
+
+  /* ── Gallery cards (Proporção 2:3 Vertical) ────────────────────── */
+  .gallery-card {
+    background: #111;
+    border-radius: 12px;
+    overflow: hidden;
+    aspect-ratio: 2 / 3; 
+    cursor: pointer;
+    position: relative;
+    border: 1px solid #1f1f1f;
+    opacity: 0;
+    transform: translateY(60px) rotate(-6deg) scale(0.92);
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s ease, opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .gallery-card.dealt {
+    opacity: 1;
+    transform: translateY(0) rotate(0deg) scale(1);
+  }
+  .gallery-card.dealt:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.5);
+  }
+  .gallery-card:active { transform: scale(0.96); }
+  .gallery-card img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  /* ── Spinner ────────────────────────────────────────────────────── */
+  .spinner {
+    border: 3px solid rgba(255,255,255,0.1);
+    border-left-color: #3b82f6;
+    border-radius: 50%;
+    width: 32px; height: 32px;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* ── Hover styling for prompts ── */
+  #viewFullPrompt, #viewOriginalPrompt {
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+  #viewFullPrompt:hover, #viewOriginalPrompt:hover {
+    opacity: 0.75;
+  }
+
+  /* ── Toast notification ─────────────────────────────────────────── */
+  .toast-notification {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: rgba(17, 24, 39, 0.85);
+    backdrop-filter: blur(12px) saturate(180%);
+    -webkit-backdrop-filter: blur(12px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 9999px;
+    font-size: 13px;
+    font-weight: 500;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+    z-index: 99999;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1), transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toast-notification.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+</style>
+</head>
+<body>
+<!-- ── GALLERY ─────────────────────────────────────────────────────────── -->
+<div class="max-w-7xl mx-auto px-2 py-4 sm:px-6 sm:py-8">
+  <header class="flex justify-between items-center mb-4 sm:mb-8 border-b border-gray-900 pb-3">
+    <h1 class="text-xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-2">
+      ReImagineX
+      <span class="text-xs font-normal text-gray-500 bg-gray-900 px-2.5 py-1 rounded-full border border-gray-800">v1.3.0</span>
+    </h1>
+    <div class="flex items-center gap-2">
+      <!-- Select Multiple Button -->
+      <button id="btnToggleSelection" onclick="toggleSelectionMode()"
+        class="bg-gray-850 hover:bg-gray-800 border border-gray-850 active:scale-95 p-2 rounded-lg text-gray-300 hover:text-white transition shadow-md flex items-center justify-center"
+        title="Select Multiple">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
+        </svg>
+      </button>
+
+      <!-- Settings Button -->
+      <button onclick="openConfigModal()"
+        class="bg-gray-850 hover:bg-gray-800 border border-gray-855 active:scale-95 p-2 rounded-lg text-gray-300 hover:text-white transition shadow-md flex items-center justify-center"
+        title="Settings">
+        <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+      </button>
+
+      <input type="file" id="uploadInput" class="hidden" accept="image/png,image/jpeg">
+      <button onclick="document.getElementById('uploadInput').click()"
+        class="bg-blue-600 hover:bg-blue-500 active:scale-95 px-4 py-2 rounded-lg text-xs sm:text-sm font-semibold transition shadow-md flex items-center gap-1.5">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+        </svg>
+        Upload
+      </button>
+    </div>
+  </header>
+  <div id="gallery" class="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2 sm:gap-6"></div>
+</div>
+
+<!-- Floating Action Bar for Multiple Selection -->
+<div id="selectionActionBar" style="display:none;" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900/90 border border-gray-800 rounded-full py-3 px-6 shadow-2xl z-50 flex items-center gap-6 backdrop-blur-md transition-all duration-300 transform translate-y-20">
+  <span id="txtSelectionCount" class="text-xs sm:text-sm text-gray-300 font-semibold">0 selected</span>
+  <div class="flex items-center gap-2">
+    <button onclick="deleteSelected()" class="bg-red-650 hover:bg-red-600 active:scale-95 text-white font-semibold text-xs sm:text-sm py-1.5 px-4 rounded-full transition shadow-md">
+      Delete
+    </button>
+    <button onclick="disableSelectionMode()" class="bg-gray-800 hover:bg-gray-700 active:scale-95 text-gray-300 font-semibold text-xs sm:text-sm py-1.5 px-4 rounded-full transition border border-gray-700">
+      Cancel
+    </button>
+  </div>
+</div>
+
+<!-- ── MODAL 1: FULLSCREEN IMAGE VIEWER ──────────────────────────────────── -->
+<div id="imageModal">
+  <!-- Top Bar -->
+  <div id="modalTopBar">
+    <button id="btnCloseModal"
+      style="background:#1f2937;color:#fff;border:none;border-radius:50%;width:42px;height:42px;font-size:18px;font-weight:bold;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s;">
+      ✕
+    </button>
+    <span id="modalCounter" style="color:#6b7280;font-size:12px;font-family:monospace;"></span>
+    <button id="btnOpenPrompt"
+      style="background:#2563eb;color:#fff;border:none;border-radius:50%;width:42px;height:42px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s;"
+      title="Create variation">
+      <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"
+          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/>
+      </svg>
+    </button>
+  </div>
+
+  <!-- Image + prompt overlay container -->
+  <div id="modalImageContainer">
+    <!-- Desktop navigation -->
+    <button onclick="slidePrev()"
+      style="position:absolute;left:12px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:44px;height:44px;font-size:18px;cursor:pointer;display:none;align-items:center;justify-content:center;z-index:10;"
+      id="btnPrev">◀</button>
+    <button onclick="slideNext()"
+      style="position:absolute;right:12px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:44px;height:44px;font-size:18px;cursor:pointer;display:none;align-items:center;justify-content:center;z-index:10;"
+      id="btnNext">▶</button>
+    <img id="viewFullImage" src="" alt="Selected image">
+  </div>
+
+  <!-- Sliding Details Drawer -->
+  <div id="detailsDrawer">
+    <!-- Toggle Button positioned above drawer -->
+    <button id="btnToggleDrawer">
+      <span id="btnToggleDrawerText">Show Details</span>
+      <span id="btnToggleDrawerIcon">▲</span>
+    </button>
+
+    <!-- Actions Row -->
+    <div style="display: flex; gap: 10px; width: 100%;">
+      <!-- Upscale Button -->
+      <button id="btnUpscaleCurrent" onclick="upscaleCurrent()" 
+        style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(135deg, #4f46e5, #6366f1); color: #fff; border: none; border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);"
+        onmouseover="this.style.opacity='0.9'"
+        onmouseout="this.style.opacity='1'">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width: 2.5px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+        </svg>
+        <span>Upscale (4x)</span>
+      </button>
+
+      <!-- Reprocess Button -->
+      <button id="btnReprocessCurrent" onclick="reprocessCurrent()" 
+        style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: rgba(31, 41, 55, 0.9); border: 1px solid rgba(75, 85, 99, 0.4); color: #e5e7eb; border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease;"
+        onmouseover="this.style.background='rgba(55, 65, 81, 0.9)'"
+        onmouseout="this.style.background='rgba(31, 41, 55, 0.9)'">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width: 2.5px;">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" />
+        </svg>
+        <span>Reprocess Prompt</span>
+      </button>
+    </div>
+
+    <!-- Prompt details wrapper -->
+    <div id="promptDetails" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); padding: 12px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px;">
+      <div id="badgeContainer" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 2px;"></div>
+      <div id="originalPromptWrapper" style="display:none;">
+        <p style="font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Original Prompt</p>
+        <p id="viewOriginalPrompt" style="font-size:12px;color:rgba(255,255,255,0.7);user-select:text;" title="Click to copy"></p>
+      </div>
+      <div>
+        <p id="txtPromptFinalTitle" style="font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Final Prompt (LLM)</p>
+        <p id="viewFullPrompt" style="font-size:12px;color:rgba(255,255,255,0.95);user-select:text;" title="Click to copy"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL 2: PROMPT / VARIATION ────────────────────────────────────────── -->
+<div id="promptModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:10000;align-items:center;justify-content:center;padding:8px;backdrop-filter:blur(4px);">
+  <div style="background:#111827;border:1px solid #1f2937;border-radius:16px;width:100%;max-width:900px;display:flex;flex-direction:column;overflow:hidden;max-height:95dvh;position:relative;">
+    <button id="btnClosePrompt"
+      style="position:absolute;top:12px;right:12px;background:#1f2937;color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-weight:bold;font-size:15px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center;">
+      ✕
+    </button>
+
+    <!-- Base reference image preview -->
+    <div style="background:#000;display:flex;align-items:center;justify-content:center;padding:12px;height:35vh;border-bottom:1px solid #1f2937;">
+      <img id="promptRefImage" src="" alt="Base reference" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">
+    </div>
+
+    <!-- Inputs -->
+    <div style="padding:20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;" class="no-scrollbar">
+      <div>
+        <h2 style="font-size:18px;font-weight:700;color:#fff;">New Variation</h2>
+        <p style="font-size:11px;color:#6b7280;margin-top:2px;">This image will serve as the base for the new variation.</p>
+      </div>
+      <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">Prompt</label>
+        <textarea id="promptText" rows="3"
+          style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:10px;padding:10px 12px;color:#fff;font-size:14px;resize:none;outline:none;font-family:inherit;"
+          placeholder="Describe the modifications you want to make..."></textarea>
+      </div>
+      
+      <!-- Toggles and Advanced options -->
+      <div class="flex flex-col gap-3 bg-gray-900/50 p-3 rounded-xl border border-gray-800/80">
+        <!-- Input Upscale -->
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="upscaleInputCheckbox" style="width:18px;height:18px;accent-color:#2563eb;cursor:pointer;">
+          <label for="upscaleInputCheckbox" style="font-size:13px;color:#d1d5db;cursor:pointer;user-select:none;">
+            Input Upscale (enable if the base reference image has low quality)
+          </label>
+        </div>
+
+        <!-- Bypass LLM -->
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="bypassLlmCheckbox" style="width:18px;height:18px;accent-color:#2563eb;cursor:pointer;">
+          <label for="bypassLlmCheckbox" style="font-size:13px;color:#d1d5db;cursor:pointer;user-select:none;">
+            Bypass LLM refinement (send original raw prompt directly)
+          </label>
+        </div>
+
+        <!-- Force consistency -->
+        <div style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" id="forceConsistencyCheckbox" style="width:18px;height:18px;accent-color:#2563eb;cursor:pointer;">
+          <label for="forceConsistencyCheckbox" style="font-size:13px;color:#d1d5db;cursor:pointer;user-select:none;">
+            Force consistency ("Keep everything identical, only modify...")
+          </label>
+        </div>
+      </div>
+
+      <button id="btnSubmitPrompt"
+        style="width:100%;background:#2563eb;color:#fff;border:none;border-radius:10px;padding:14px;font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s, opacity 0.15s;">
+        Generate Variation ✦
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODAL 3: SYSTEM SETTINGS ────────────────────────────────────────── -->
+<div id="configModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:10000;align-items:center;justify-content:center;padding:8px;backdrop-filter:blur(4px);">
+  <div style="background:#111827;border:1px solid #1f2937;border-radius:16px;width:100%;max-width:600px;display:flex;flex-direction:column;overflow:hidden;max-height:95dvh;position:relative;">
+    <button onclick="closeConfigModal()"
+      style="position:absolute;top:12px;right:12px;background:#1f2937;color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-weight:bold;font-size:15px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center;">
+      ✕
+    </button>
+    
+    <div style="padding:20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;" class="no-scrollbar">
+      <div>
+        <h2 style="font-size:18px;font-weight:700;color:#fff;">System Settings</h2>
+        <p style="font-size:11px;color:#6b7280;margin-top:2px;">Adjust backend server settings and generation checkpoints.</p>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">ComfyUI URL</label>
+        <input type="text" id="cfgComfyUrl" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
+      </div>
+
+      <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">OpenRouter API Key</label>
+        <input type="password" id="cfgApiKey" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
+      </div>
+
+      <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">OpenRouter Models (one per line, sequential priority)</label>
+        <textarea id="cfgOpenRouterModels" rows="3" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;resize:none;outline:none;font-family:monospace;"></textarea>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">System Prompt (Prompt Expansion)</label>
+        <textarea id="cfgSystemPrompt" rows="5" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:12px;resize:none;outline:none;line-height:1.4;"></textarea>
+      </div>
+
+      <div style="display:grid;grid-template-cols: 1fr 1fr;gap:10px;">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Diffusion Model</label>
+          <select id="cfgDiffusionModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">CLIP Model</label>
+          <select id="cfgClipModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">VAE</label>
+          <select id="cfgVaeModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Upscale Model</label>
+          <select id="cfgUpscaleModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Input Upscale</label>
+          <select id="cfgInputUpscaleModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
+        </div>
+      </div>
+
+      <button id="btnSaveConfig" onclick="saveConfig()"
+        style="width:100%;background:#10b981;color:#fff;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:600;cursor:pointer;transition:background 0.15s;margin-top:4px;">
+        Save Settings
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Global State ─────────────────────────────────────────────────────────────
+let galleryItems    = [];
+let modalIndex      = 0;
+let currentBaseId   = null;
+let touchStartX     = 0;
+let touchStartY     = 0;
+let isDesktop       = window.matchMedia('(min-width: 768px)').matches;
+const dealtCardIds  = new Set();
+
+// Navigation: 'roots' | 'lineage'
+let viewMode        = 'roots';
+let lineageRootId   = null;
+let lineageRootItem = null;
+
+// Pagination
+let currentOffset   = 0;
+const pageLimit     = 20;
+let hasMore         = true;
+let isLoadingMore   = false;
+
+// Bulk Selection
+let isSelectionMode = false;
+let selectedIds     = new Set();
+
+// ── DOM Refs ──────────────────────────────────────────────────────────────────
+const imageModal    = document.getElementById('imageModal');
+const promptModal   = document.getElementById('promptModal');
+const configModal   = document.getElementById('configModal');
+const viewImage     = document.getElementById('viewFullImage');
+const viewPrompt    = document.getElementById('viewFullPrompt');
+const viewOriginalPrompt = document.getElementById('viewOriginalPrompt');
+const originalPromptWrapper = document.getElementById('originalPromptWrapper');
+const txtPromptFinalTitle = document.getElementById('txtPromptFinalTitle');
+const modalCounter  = document.getElementById('modalCounter');
+const promptText    = document.getElementById('promptText');
+const btnPrev       = document.getElementById('btnPrev');
+const btnNext       = document.getElementById('btnNext');
+
+// Desktop navigation arrows visibility
+if (isDesktop) {
+  btnPrev.style.display = 'flex';
+  btnNext.style.display = 'flex';
+}
+
+// ── Button listeners ─────────────────────────────────────────────────────────
+document.getElementById('btnCloseModal').addEventListener('click',  closeImageModal);
+document.getElementById('btnOpenPrompt').addEventListener('click',  openPromptModal);
+document.getElementById('btnClosePrompt').addEventListener('click', closePromptModal);
+document.getElementById('btnSubmitPrompt').addEventListener('click', submitPrompt);
+
+// Copy prompts to clipboard
+viewPrompt.addEventListener('click', () => {
+  const text = viewPrompt.textContent;
+  if (text && text !== '—') {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Prompt copied to clipboard!');
+    }).catch(err => {
+      console.error('Failed to copy: ', err);
+    });
+  }
+});
+
+viewOriginalPrompt.addEventListener('click', () => {
+  const text = viewOriginalPrompt.textContent;
+  if (text && text !== '—') {
+    navigator.clipboard.writeText(text).then(() => {
+      showToast('Original prompt copied to clipboard!');
+    }).catch(err => {
+      console.error('Failed to copy: ', err);
+    });
+  }
+});
+
+function showToast(message) {
+  const existing = document.querySelector('.toast-notification');
+  if (existing) existing.remove();
+  
+  const toast = document.createElement('div');
+  toast.className = 'toast-notification';
+  toast.innerHTML = `
+    <svg width="14" height="14" fill="none" stroke="#10b981" viewBox="0 0 24 24" style="stroke-width: 3px;">
+      <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+    </svg>
+    <span>${message}</span>
+  `;
+  document.body.appendChild(toast);
+  toast.offsetHeight; // force reflow
+  toast.classList.add('show');
+  
+  setTimeout(() => {
+    toast.classList.remove('show');
+    setTimeout(() => toast.remove(), 300);
+  }, 2000);
+}
+
+// Drawer State & Toggle
+let isDrawerOpen = false;
+function toggleDrawer(forceState) {
+  const drawer = document.getElementById('detailsDrawer');
+  const btnText = document.getElementById('btnToggleDrawerText');
+  const btnIcon = document.getElementById('btnToggleDrawerIcon');
+  
+  if (typeof forceState === 'boolean') {
+    isDrawerOpen = forceState;
+  } else {
+    isDrawerOpen = !isDrawerOpen;
+  }
+  
+  // Clear manual drag transforms so CSS transitions take effect
+  drawer.style.transform = '';
+  
+  if (isDrawerOpen) {
+    drawer.classList.add('open');
+    btnText.textContent = 'Hide Details';
+    btnIcon.textContent = '▼';
+  } else {
+    drawer.classList.remove('open');
+    btnText.textContent = 'Show Details';
+    btnIcon.textContent = '▲';
+  }
+}
+
+const drawerEl = document.getElementById('detailsDrawer');
+const toggleBtn = document.getElementById('btnToggleDrawer');
+toggleBtn.addEventListener('click', () => toggleDrawer());
+
+
+
+
+// ── Navigation & Data Loading ─────────────────────────────────────────────────
+function buildApiUrl(limit, offset) {
+  let url = `/api/state?limit=${limit}&offset=${offset}`;
+  if (viewMode === 'lineage' && lineageRootId) {
+    url += `&root_id=${lineageRootId}`;
+  }
+  return url;
+}
+
+function resetView() {
+  galleryItems = [];
+  currentOffset = 0;
+  hasMore = true;
+  isLoadingMore = false;
+  dealtCardIds.clear();
+}
+
+async function navigateToLineage(id) {
+  const item = galleryItems.find(i => i.id === id);
+  if (!item) return;
+  viewMode = 'lineage';
+  lineageRootId = id;
+  lineageRootItem = item;
+  resetView();
+  await loadFirstPage();
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+async function navigateToRoots() {
+  viewMode = 'roots';
+  lineageRootId = null;
+  lineageRootItem = null;
+  resetView();
+  await loadFirstPage();
+  window.scrollTo({top: 0, behavior: 'smooth'});
+}
+
+async function loadFirstPage() {
+  try {
+    const res = await fetch(buildApiUrl(pageLimit, 0));
+    const data = await res.json();
+
+    if (galleryItems.length === 0) {
+      galleryItems = data;
+      currentOffset = data.length;
+      hasMore = data.length >= pageLimit;
+    } else {
+      // Merge items ensuring ordering and no duplicates
+      const existingIds = new Set(galleryItems.map(i => i.id));
+      const newItems = data.filter(i => !existingIds.has(i.id));
+
+      // Update statuses of existing items (e.g. pending -> completed transitions)
+      data.forEach(item => {
+        const localItem = galleryItems.find(i => i.id === item.id);
+        if (localItem) {
+          localItem.status = item.status;
+          localItem.filename = item.filename;
+          localItem.comfyName = item.comfyName;
+          localItem.prompt = item.prompt;
+          localItem.prompt_original = item.prompt_original;
+          localItem.bypass_llm = item.bypass_llm;
+          localItem.force_consistency = item.force_consistency;
+          localItem.parent_id = item.parent_id;
+          localItem.upscale_input = item.upscale_input;
+        }
+      });
+
+      if (newItems.length > 0) {
+        galleryItems = [...newItems, ...galleryItems];
+        currentOffset += newItems.length;
+      }
+    }
+    renderGallery();
+  } catch(e) {}
+}
+
+async function loadMore() {
+  if (isLoadingMore || !hasMore) return;
+  isLoadingMore = true;
+
+  const container = document.getElementById('gallery');
+  const loader = document.createElement('div');
+  loader.id = 'infinite-scroll-loader';
+  loader.className = 'col-span-full py-6 flex justify-center';
+  loader.innerHTML = '<div class="spinner"></div>';
+  container.appendChild(loader);
+
+  try {
+    const res = await fetch(buildApiUrl(pageLimit, currentOffset));
+    const data = await res.json();
+
+    const existingLoader = document.getElementById('infinite-scroll-loader');
+    if (existingLoader) existingLoader.remove();
+
+    if (data.length < pageLimit) {
+      hasMore = false;
+    }
+
+    if (data.length > 0) {
+      const existingIds = new Set(galleryItems.map(i => i.id));
+      const filteredData = data.filter(i => !existingIds.has(i.id));
+
+      galleryItems = [...galleryItems, ...filteredData];
+      currentOffset += filteredData.length;
+      renderGallery();
+    }
+  } catch(e) {
+    const existingLoader = document.getElementById('infinite-scroll-loader');
+    if (existingLoader) existingLoader.remove();
+  } finally {
+    isLoadingMore = false;
+  }
+}
+
+// Infinite scroll trigger
+window.addEventListener('scroll', () => {
+  if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 300) {
+    loadMore();
+  }
+});
+
+// Polling interval for updates on pending items
+setInterval(loadFirstPage, 2000);
+loadFirstPage();
+
+// ── Bulk Selection (Multiple Delete UI) ───────────────────────────────────────
+function toggleSelectionMode() {
+  if (isSelectionMode) {
+    disableSelectionMode();
+  } else {
+    isSelectionMode = true;
+    selectedIds.clear();
+    
+    const btn = document.getElementById('btnToggleSelection');
+    btn.classList.remove('bg-gray-850', 'text-gray-300');
+    btn.classList.add('bg-blue-600', 'text-white');
+    
+    document.getElementById('selectionActionBar').style.display = 'flex';
+    document.getElementById('selectionActionBar').classList.remove('translate-y-20');
+    document.getElementById('selectionActionBar').classList.add('translate-y-0');
+    
+    updateSelectionCountText();
+    renderGallery();
+  }
+}
+
+function disableSelectionMode() {
+  isSelectionMode = false;
+  selectedIds.clear();
+  
+  const btn = document.getElementById('btnToggleSelection');
+  btn.classList.remove('bg-blue-600', 'text-white');
+  btn.classList.add('bg-gray-850', 'text-gray-300');
+  
+  const bar = document.getElementById('selectionActionBar');
+  bar.classList.remove('translate-y-0');
+  bar.classList.add('translate-y-20');
+  setTimeout(() => {
+    if(!isSelectionMode) bar.style.display = 'none';
+  }, 300);
+  
+  renderGallery();
+}
+
+function toggleItemSelection(id) {
+  if (selectedIds.has(id)) {
+    selectedIds.delete(id);
+  } else {
+    selectedIds.add(id);
+  }
+  updateSelectionCountText();
+  renderGallery();
+}
+
+function updateSelectionCountText() {
+  const count = selectedIds.size;
+  document.getElementById('txtSelectionCount').textContent = `${count} selected`;
+}
+
+async function deleteSelected() {
+  if (selectedIds.size === 0) return;
+  if (!confirm(`Permanently delete the ${selectedIds.size} selected image(s) and all of their descendants?`)) return;
+  
+  try {
+    const res = await fetch('/api/items/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: Array.from(selectedIds) })
+    });
+    
+    if (res.ok) {
+      const removedSet = new Set(selectedIds);
+      galleryItems = galleryItems.filter(item => !removedSet.has(item.id));
+      currentOffset = galleryItems.length;
+      
+      disableSelectionMode();
+      await loadFirstPage();
+    } else {
+      alert('Error deleting items on the server.');
+    }
+  } catch(e) {
+    alert('Connection error while deleting.');
+  }
+}
+
+// ── Render Gallery Grid ───────────────────────────────────────────────────────
+function renderGallery() {
+  const container = document.getElementById('gallery');
+  container.innerHTML = '';
+
+  // Lineage header with back button
+  if (viewMode === 'lineage' && lineageRootItem) {
+    const header = document.createElement('div');
+    header.className = 'col-span-full';
+    header.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 0 4px;';
+    header.innerHTML = `
+      <button id="btnBackToRoots"
+        style="background:#1f2937;color:#fff;border:none;border-radius:50%;width:40px;height:40px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        ←
+      </button>
+      <div style="min-width:0;">
+        <p style="font-size:10px;color:#6b7280;text-transform:uppercase;letter-spacing:0.05em;">Variations of</p>
+        <p style="font-size:13px;color:#d1d5db;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${lineageRootItem.prompt_original || lineageRootItem.prompt || 'Image'}</p>
+      </div>
+    `;
+    container.appendChild(header);
+    header.querySelector('#btnBackToRoots').addEventListener('click', navigateToRoots);
+  }
+
+  galleryItems.forEach((item, idx) => {
+    const card = document.createElement('div');
+    card.className = 'gallery-card';
+
+    if (item.status === 'pending') {
+      card.innerHTML = `
+        <div style="position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#0a0a0a;padding:16px;">
+          <button onclick="cancelPendingItem('${item.id}', event)" 
+            style="position:absolute;top:8px;right:8px;background:rgba(239,68,68,0.25);color:#ef4444;border:none;border-radius:50%;width:26px;height:26px;font-size:12px;font-weight:bold;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background 0.15s, border-color 0.15s;border:1px solid rgba(239,68,68,0.4);" 
+            onmouseover="this.style.background='rgba(239,68,68,0.4)'; this.style.borderColor='rgba(239,68,68,0.6)'" 
+            onmouseout="this.style.background='rgba(239,68,68,0.25)'; this.style.borderColor='rgba(239,68,68,0.4)'"
+            title="Cancel Generation">
+            ✕
+          </button>
+          <div class="spinner"></div>
+          <p style="font-size:11px;color:#6b7280;text-align:center;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${item.prompt_original || item.prompt || 'Generating...'}</p>
+        </div>`;
+    } else {
+      const img = document.createElement('img');
+      const ext = item.filename.split('.').pop();
+      const base = item.filename.slice(0, -(ext.length + 1));
+      img.src     = `/thumbnails/${base}.jpg`;
+      img.loading = 'lazy';
+      img.alt     = item.prompt_original || item.prompt || '';
+      card.appendChild(img);
+
+      if (!isSelectionMode) {
+        if (viewMode === 'roots' && item.parent_id === null) {
+          card.addEventListener('click', () => navigateToLineage(item.id));
+        } else {
+          card.addEventListener('click', () => openImageModal(idx));
+        }
+      }
+    }
+
+    // Add root badge for lineage mode
+    if (viewMode === 'lineage' && item.id === lineageRootId) {
+      const badge = document.createElement('div');
+      badge.style.cssText = 'position:absolute;top:8px;right:8px;background:#2563eb;color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:999px;z-index:5;text-transform:uppercase;letter-spacing:0.05em;';
+      badge.textContent = 'Root';
+      card.appendChild(badge);
+    }
+
+    // Add upscale badge
+    if (item.upscale_input) {
+      const badge = document.createElement('div');
+      badge.style.cssText = 'position:absolute;bottom:8px;right:8px;background:rgba(16, 185, 129, 0.85);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);color:#fff;font-size:9px;font-weight:700;padding:2.5px 8px;border-radius:999px;z-index:5;text-transform:uppercase;letter-spacing:0.05em;box-shadow:0 2px 4px rgba(0,0,0,0.3);display:flex;align-items:center;gap:3px;';
+      badge.innerHTML = `
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;">
+          <polyline points="17 11 21 7 17 3"></polyline>
+          <polyline points="21 7 12 7 12 16"></polyline>
+          <polyline points="7 13 3 17 7 21"></polyline>
+          <polyline points="3 17 12 17"></polyline>
+        </svg>
+        <span>Upscaled</span>
+      `;
+      card.appendChild(badge);
+    }
+
+    // Selection indicators overlay
+    if (isSelectionMode) {
+      const isSelected = selectedIds.has(item.id);
+      
+      const selIndicator = document.createElement('div');
+      selIndicator.style.cssText = `
+        position:absolute;
+        top:10px;
+        left:10px;
+        width:24px;
+        height:24px;
+        border-radius:50%;
+        border:2px solid ${isSelected ? '#2563eb' : '#9ca3af'};
+        background:${isSelected ? '#2563eb' : 'rgba(0,0,0,0.5)'};
+        z-index:10;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        transition: all 0.15s ease;
+      `;
+      
+      if (isSelected) {
+        selIndicator.innerHTML = `
+          <svg width="12" height="12" fill="none" stroke="white" viewBox="0 0 24 24" style="stroke-width: 4px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+          </svg>
+        `;
+      }
+      
+      card.appendChild(selIndicator);
+      
+      card.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleItemSelection(item.id);
+      });
+    }
+
+    container.appendChild(card);
+    if (dealtCardIds.has(item.id)) {
+      card.style.transition = 'none';
+      card.classList.add('dealt');
+      requestAnimationFrame(() => {
+        card.style.transition = '';
+      });
+    } else {
+      setTimeout(() => {
+        card.classList.add('dealt');
+        dealtCardIds.add(item.id);
+      }, Math.min(idx * 30, 450));
+    }
+  });
+}
+
+// ── Fullscreen modal ──────────────────────────────────────────────────────────
+function openImageModal(idx) {
+  if (galleryItems[idx] && galleryItems[idx].status !== 'completed') return;
+
+  // Reset image styles and classes before opening to prevent flickering
+  viewImage.className = '';
+  viewImage.style.transform = '';
+  viewImage.style.opacity = '0';
+  viewImage.style.transition = 'none';
+
+  modalIndex = idx;
+  document.body.style.overflow = 'hidden';
+  imageModal.classList.add('open');
+
+  if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  }
+
+  // Preload target image to ensure it is decoded and loaded before showing it
+  const item = galleryItems[idx];
+  const preloadImg = new Image();
+  preloadImg.src = `/images/${item.filename}`;
+
+  const showImage = () => {
+    if (!imageModal.classList.contains('open')) return;
+    updateModalContent();
+    viewImage.style.transition = 'opacity 0.25s ease-out';
+    viewImage.style.opacity = '1';
+  };
+
+  if (preloadImg.complete) {
+    showImage();
+  } else {
+    preloadImg.onload = showImage;
+    preloadImg.onerror = showImage;
+  }
+}
+
+// Escape key and arrow controls configuration
+document.addEventListener('keydown', (e) => {
+  if (!imageModal.classList.contains('open')) return;
+  
+  // Ignore navigation if focusing typing inputs
+  const tag = e.target.tagName.toLowerCase();
+  if (tag === 'input' || tag === 'textarea') return;
+  
+  if (e.key === 'ArrowRight') slideNext();
+  if (e.key === 'ArrowLeft')  slidePrev();
+  if (e.key === 'Escape')     closeImageModal();
+});
+
+function closeImageModal(isSwipe = false) {
+  imageModal.classList.remove('open');
+  document.body.style.overflow = '';
+  toggleDrawer(false);
+
+  // Set the image transition to match the modal closing time, and fade it out
+  viewImage.style.transition = 'transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.35s ease';
+  
+  if (isSwipe) {
+    // Continue moving it down off-screen smoothly
+    viewImage.style.transform = 'translateY(100vh) scale(0.9)';
+  } else {
+    // scale down slightly and fade out
+    viewImage.style.transform = 'scale(0.96)';
+  }
+  viewImage.style.opacity = '0';
+
+  // Wait for the modal transition to finish (350ms) before clearing the source and styles
+  setTimeout(() => {
+    if (!imageModal.classList.contains('open')) {
+      viewImage.className = '';
+      viewImage.style.transform = '';
+      viewImage.style.opacity = '0';
+      viewImage.style.transition = 'none';
+      viewImage.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    }
+  }, 350);
+
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  }
+}
+
+function updateModalContent() {
+  const item = galleryItems[modalIndex];
+  if (!item || item.status !== 'completed') return;
+
+  // Directly assign source (no empty string clearing) to prevent image flashing
+  viewImage.src = `/images/${item.filename}`;
+  
+  // Display split original prompt and LLM expanded prompt
+  if (item.prompt_original && item.prompt_original !== item.prompt) {
+    originalPromptWrapper.style.display = 'block';
+    viewOriginalPrompt.textContent = item.prompt_original;
+    txtPromptFinalTitle.textContent = "Optimized Prompt (LLM)";
+  } else {
+    originalPromptWrapper.style.display = 'none';
+    txtPromptFinalTitle.textContent = "Used Prompt";
+  }
+  
+  viewPrompt.textContent = item.prompt || '—';
+  modalCounter.textContent = `${modalIndex + 1} / ${galleryItems.length}`;
+  currentBaseId = item.id;
+
+  // Update badge container inside drawer
+  const badgeContainer = document.getElementById('badgeContainer');
+  if (badgeContainer) {
+    badgeContainer.innerHTML = '';
+    if (item.upscale_input) {
+      const upscaleBadge = document.createElement('div');
+      upscaleBadge.style.cssText = 'background:rgba(16, 185, 129, 0.2);color:#10b981;border:1px solid rgba(16, 185, 129, 0.4);font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:0.05em;display:inline-flex;align-items:center;gap:4px;';
+      upscaleBadge.innerHTML = `
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="17 11 21 7 17 3"></polyline>
+          <polyline points="21 7 12 7 12 16"></polyline>
+          <polyline points="7 13 3 17 7 21"></polyline>
+          <polyline points="3 17 12 17"></polyline>
+        </svg>
+        Upscaled (4x)
+      `;
+      badgeContainer.appendChild(upscaleBadge);
+    }
+  }
+
+  // Toggle buttons visibility and text based on root upload vs variation status
+  const btnReprocess = document.getElementById('btnReprocessCurrent');
+  const btnUpscale = document.getElementById('btnUpscaleCurrent');
+  
+  if (item.parent_id === null) {
+    btnReprocess.style.display = 'none';
+    btnUpscale.querySelector('span').textContent = 'Upscale (4x)';
+  } else {
+    btnReprocess.style.display = 'flex';
+    btnUpscale.querySelector('span').textContent = 'Upscale (4x)';
+  }
+}
+
+let isTransitioning = false;
+
+function slideNext() {
+  if (isTransitioning) return;
+  let next = modalIndex + 1;
+  while (next < galleryItems.length && galleryItems[next].status !== 'completed') next++;
+  if (next < galleryItems.length) {
+    isTransitioning = true;
+    
+    const nextItem = galleryItems[next];
+    const preloadImg = new Image();
+    preloadImg.src = `/images/${nextItem.filename}`;
+    
+    // Slide out to left smoothly starting from current offset
+    viewImage.style.transition = 'transform 0.15s ease-in, opacity 0.15s ease-in';
+    viewImage.style.transform = 'translateX(-120px) scale(0.95)';
+    viewImage.style.opacity = '0';
+    
+    setTimeout(() => {
+      const runSlideIn = () => {
+        if (!imageModal.classList.contains('open')) {
+          isTransitioning = false;
+          return;
+        }
+        
+        // Reset image styles off-screen and invisible first
+        viewImage.style.transition = 'none';
+        viewImage.style.transform = 'translateX(120px) scale(0.95)';
+        viewImage.style.opacity = '0';
+        viewImage.offsetHeight; // Force reflow
+        
+        modalIndex = next;
+        updateModalContent();
+        
+        // Force reflow after updating content/src
+        viewImage.offsetHeight;
+        
+        // Slide in smoothly to center
+        viewImage.style.transition = 'transform 0.22s cubic-bezier(0, 0, 0.2, 1), opacity 0.22s ease-out';
+        viewImage.style.transform = 'none';
+        viewImage.style.opacity = '1';
+        
+        setTimeout(() => {
+          isTransitioning = false;
+        }, 230);
+      };
+      
+      if (preloadImg.complete) {
+        runSlideIn();
+      } else {
+        preloadImg.onload = runSlideIn;
+        preloadImg.onerror = runSlideIn;
+      }
+    }, 150);
+  }
+}
+
+function slidePrev() {
+  if (isTransitioning) return;
+  let prev = modalIndex - 1;
+  while (prev >= 0 && galleryItems[prev].status !== 'completed') prev--;
+  if (prev >= 0) {
+    isTransitioning = true;
+    
+    const prevItem = galleryItems[prev];
+    const preloadImg = new Image();
+    preloadImg.src = `/images/${prevItem.filename}`;
+    
+    // Slide out to right smoothly starting from current offset
+    viewImage.style.transition = 'transform 0.15s ease-in, opacity 0.15s ease-in';
+    viewImage.style.transform = 'translateX(120px) scale(0.95)';
+    viewImage.style.opacity = '0';
+    
+    setTimeout(() => {
+      const runSlideIn = () => {
+        if (!imageModal.classList.contains('open')) {
+          isTransitioning = false;
+          return;
+        }
+        
+        // Reset image styles off-screen and invisible first
+        viewImage.style.transition = 'none';
+        viewImage.style.transform = 'translateX(-120px) scale(0.95)';
+        viewImage.style.opacity = '0';
+        viewImage.offsetHeight; // Force reflow
+        
+        modalIndex = prev;
+        updateModalContent();
+        
+        // Force reflow after updating content/src
+        viewImage.offsetHeight;
+        
+        // Slide in smoothly to center
+        viewImage.style.transition = 'transform 0.22s cubic-bezier(0, 0, 0.2, 1), opacity 0.22s ease-out';
+        viewImage.style.transform = 'none';
+        viewImage.style.opacity = '1';
+        
+        setTimeout(() => {
+          isTransitioning = false;
+        }, 230);
+      };
+      
+      if (preloadImg.complete) {
+        runSlideIn();
+      } else {
+        preloadImg.onload = runSlideIn;
+        preloadImg.onerror = runSlideIn;
+      }
+    }, 150);
+  }
+}
+
+// Swipe touch gestures with interactive physics/finger-tracking
+let gestureLocked = null; // 'horizontal' | 'vertical' | 'prevented' | null
+let drawerHeight = 0;
+
+imageModal.addEventListener('touchstart', (e) => {
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+  gestureLocked = null;
+  
+  const drawer = document.getElementById('detailsDrawer');
+  drawerHeight = drawer.offsetHeight || 300;
+  
+  // Disable transitions temporarily during touch drag
+  drawer.style.transition = 'none';
+  viewImage.style.transition = 'none';
+}, { passive: true });
+
+imageModal.addEventListener('touchmove', (e) => {
+  if (e.touches.length > 1) return; // Only track single touch
+  
+  const dx = e.touches[0].clientX - touchStartX;
+  const dy = e.touches[0].clientY - touchStartY;
+  const drawer = document.getElementById('detailsDrawer');
+  const startedInDrawer = e.target.closest('#detailsDrawer') !== null;
+  
+  if (gestureLocked === null) {
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) {
+      // If swipe starts inside drawer, prevent horizontal swiping to avoid conflicts with drawer items
+      gestureLocked = startedInDrawer ? 'prevented' : 'horizontal';
+    } else if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 10) {
+      gestureLocked = 'vertical';
+    }
+  }
+  
+  if (gestureLocked === 'horizontal') {
+    if (isTransitioning) return;
+    
+    // Drag image horizontally with slight scale down on extreme drags
+    viewImage.style.transform = `translateX(${dx}px) scale(${1 - Math.abs(dx) / (window.innerWidth * 3.5)})`;
+    viewImage.style.opacity = `${1 - Math.abs(dx) / 380}`;
+  } 
+  else if (gestureLocked === 'vertical') {
+    if (isDrawerOpen) {
+      // Drawer is open, dragging down should slide it closed
+      const offset = Math.max(0, Math.min(drawerHeight, dy));
+      drawer.style.transform = `translateY(${offset}px)`;
+    } else {
+      if (!startedInDrawer) {
+        if (dy < 0) {
+          // Dragging up: slide the drawer open
+          const offset = Math.max(0, Math.min(drawerHeight, drawerHeight + dy));
+          drawer.style.transform = `translateY(${offset}px)`;
+          viewImage.style.transform = 'none';
+          viewImage.style.opacity = '1';
+        } else {
+          // Dragging down: drag the image down for exit to grid animation
+          viewImage.style.transform = `translateY(${dy}px) scale(${1 - dy / (window.innerHeight * 3.5)})`;
+          viewImage.style.opacity = `${1 - dy / 400}`;
+          drawer.style.transform = `translateY(${drawerHeight}px)`;
+        }
+      }
+    }
+  }
+}, { passive: true });
+
+imageModal.addEventListener('touchend', (e) => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  
+  const drawer = document.getElementById('detailsDrawer');
+  const startedInDrawer = e.target.closest('#detailsDrawer') !== null;
+  
+  // Restore default animations and smooth cubic-bezier transitions
+  drawer.style.transition = 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
+  viewImage.style.transition = 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease';
+  
+  if (gestureLocked === 'horizontal' && !isTransitioning) {
+    if (dx < -80) {
+      slideNext();
+    } else if (dx > 80) {
+      slidePrev();
+    } else {
+      // Snap image back to center
+      viewImage.style.transform = 'none';
+      viewImage.style.opacity = '1';
+    }
+  } 
+  else if (gestureLocked === 'vertical') {
+    if (isDrawerOpen) {
+      // Swipe down to close drawer
+      if (dy > 80) {
+        toggleDrawer(false);
+      } else {
+        // Snap drawer back to open
+        toggleDrawer(true);
+      }
+    } else {
+      // Swipe up to open drawer
+      if (dy < -80 && !startedInDrawer) {
+        toggleDrawer(true);
+      } else if (dy > 80 && !startedInDrawer) {
+        // Swipe down to exit to grid with swipe animation
+        closeImageModal(true);
+      } else {
+        // Snap drawer back to closed, and snap image back to center
+        toggleDrawer(false);
+        viewImage.style.transform = 'none';
+        viewImage.style.opacity = '1';
+      }
+    }
+  } 
+  else {
+    // If no lock or minimal drag, handle direct gestures
+    if (dy > 80 && !startedInDrawer) {
+      if (isDrawerOpen) {
+        // opposite swipe should close it first
+        toggleDrawer(false);
+      } else {
+        // exit to grid with swipe animation
+        closeImageModal(true);
+      }
+    } else if (dy < -80 && !startedInDrawer && !isDrawerOpen) {
+      toggleDrawer(true);
+    }
+  }
+  
+  gestureLocked = null;
+}, { passive: true });
+
+// ── Variation modal ───────────────────────────────────────────────────────────
+function openPromptModal() {
+  const item = galleryItems[modalIndex];
+  if (!item) return;
+  document.getElementById('promptRefImage').src = `/images/${item.filename}`;
+  currentBaseId = item.id;
+  promptText.value = '';
+  document.getElementById('upscaleInputCheckbox').checked = false;
+  document.getElementById('bypassLlmCheckbox').checked = false;
+  document.getElementById('forceConsistencyCheckbox').checked = false;
+  promptModal.style.display = 'flex';
+}
+
+function closePromptModal() {
+  promptModal.style.display = 'none';
+}
+
+async function submitPrompt() {
+  const prompt = promptText.value.trim();
+  if (!prompt || !currentBaseId) return;
+
+  const btn = document.getElementById('btnSubmitPrompt');
+  const upscaleInput = document.getElementById('upscaleInputCheckbox').checked;
+  const bypassLlm = document.getElementById('bypassLlmCheckbox').checked;
+  const forceConsistency = document.getElementById('forceConsistencyCheckbox').checked;
+  const btnOriginalText = btn.innerHTML;
+  
+  // Submit processing visual feedback
+  btn.disabled = true;
+  btn.style.opacity = '0.7';
+  btn.innerHTML = `
+    <span style="display:inline-flex;align-items:center;gap:8px;justify-content:center;width:100%;">
+      <svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" style="width:16px;height:16px;animation:spin 1s linear infinite;">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" style="opacity:0.25;"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" style="opacity:0.75;"></path>
+      </svg>
+      Generating variation...
+    </span>
+  `;
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        base_id: currentBaseId, 
+        prompt: prompt,
+        upscale_input: upscaleInput,
+        bypass_llm: bypassLlm,
+        force_consistency: forceConsistency
+      })
+    });
+    if (!res.ok) {
+      alert('Error submitting generation request.');
+    }
+  } catch(e) {
+    alert('Server connection error.');
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.innerHTML = btnOriginalText;
+    
+    closePromptModal();
+    closeImageModal();
+
+    // Navigate to lineage view so the user sees the new variation immediately
+    if (viewMode === 'roots') {
+      await navigateToLineage(currentBaseId);
+    } else {
+      await loadFirstPage();
+    }
+  }
+}
+
+// ── System settings configurations modal ──────────────────────────────────────
+// Keep track of available models fetched from ComfyUI
+let comfyModels = null;
+
+function populateSelect(el, options, selected) {
+  el.innerHTML = '';
+  if (options.length === 0) {
+    el.innerHTML = `<option value="${selected || ''}">${selected || '—'}</option>`;
+    return;
+  }
+  for (const opt of options) {
+    const sel = opt === selected ? ' selected' : '';
+    el.innerHTML += `<option value="${opt}"${sel}>${opt}</option>`;
+  }
+}
+
+async function openConfigModal() {
+  let cfg = {};
+  try {
+    const [cfgRes, modelsRes] = await Promise.all([
+      fetch('/api/config'),
+      fetch('/api/comfy/models')
+    ]);
+    cfg = await cfgRes.json();
+    comfyModels = await modelsRes.json();
+  } catch(e) {
+    comfyModels = null;
+  }
+
+  // Text fields
+  document.getElementById('cfgComfyUrl').value = cfg.comfy_url || '';
+  document.getElementById('cfgApiKey').value = cfg.openrouter_api_key || '';
+  document.getElementById('cfgOpenRouterModels').value = (cfg.openrouter_models || []).join('\n');
+  document.getElementById('cfgSystemPrompt').value = cfg.system_prompt || '';
+
+  // Model selects — use fetched models or fall back to saved value
+  if (comfyModels) {
+    populateSelect(document.getElementById('cfgDiffusionModel'), comfyModels.diffusion_models, cfg.diffusion_model_name);
+    populateSelect(document.getElementById('cfgClipModel'), comfyModels.clip_models, cfg.clip_model_name);
+    populateSelect(document.getElementById('cfgVaeModel'), comfyModels.vae_models, cfg.vae_model_name);
+    populateSelect(document.getElementById('cfgUpscaleModel'), comfyModels.upscale_models, cfg.upscale_model_name);
+    populateSelect(document.getElementById('cfgInputUpscaleModel'), comfyModels.upscale_models, cfg.input_upscale_model_name);
+  }
+
+  configModal.style.display = 'flex';
+}
+
+function closeConfigModal() {
+  configModal.style.display = 'none';
+}
+
+function selectVal(id) {
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+
+async function saveConfig() {
+  const comfyUrl = selectVal('cfgComfyUrl');
+  const apiKey = selectVal('cfgApiKey');
+  const openRouterModels = document.getElementById('cfgOpenRouterModels').value.split('\n').map(m => m.trim()).filter(m => m.length > 0);
+  const systemPrompt = document.getElementById('cfgSystemPrompt').value;
+  const diffusionModel = selectVal('cfgDiffusionModel');
+  const clipModel = selectVal('cfgClipModel');
+  const vaeModel = selectVal('cfgVaeModel');
+  const upscaleModel = selectVal('cfgUpscaleModel');
+  const inputUpscaleModel = selectVal('cfgInputUpscaleModel');
+
+  if (!comfyUrl || !diffusionModel || !upscaleModel || openRouterModels.length === 0) {
+    alert('Please fill in all required fields.');
+    return;
+  }
+
+  const btn = document.getElementById('btnSaveConfig');
+  const btnTextOriginal = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = 'Saving...';
+
+  try {
+    const res = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        system_prompt: systemPrompt,
+        openrouter_models: openRouterModels,
+        diffusion_model_name: diffusionModel,
+        clip_model_name: clipModel,
+        vae_model_name: vaeModel,
+        upscale_model_name: upscaleModel,
+        input_upscale_model_name: inputUpscaleModel,
+        comfy_url: comfyUrl,
+        openrouter_api_key: apiKey
+      })
+    });
+
+    if (res.ok) {
+      alert('Settings saved successfully!');
+      closeConfigModal();
+    } else {
+      alert('Error saving settings on the server.');
+    }
+  } catch(e) {
+    alert('Connection error while saving settings.');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = btnTextOriginal;
+  }
+}
+
+// ── Cancel & Reprocess & Upscale Actions ──────────────────────────────────────
+async function cancelPendingItem(id, event) {
+  if (event) {
+    event.stopPropagation();
+    event.preventDefault();
+  }
+  if (!confirm('Cancel this image generation?')) return;
+  
+  try {
+    const res = await fetch('/api/items/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [id] })
+    });
+    if (res.ok) {
+      galleryItems = galleryItems.filter(item => item.id !== id);
+      currentOffset = galleryItems.length;
+      renderGallery();
+    } else {
+      alert('Error canceling image.');
+    }
+  } catch(e) {
+    alert('Connection error while canceling.');
+  }
+}
+
+async function upscaleCurrent() {
+  const item = galleryItems[modalIndex];
+  if (!item) return;
+
+  const btn = document.getElementById('btnUpscaleCurrent');
+  const originalHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.style.opacity = '0.7';
+  btn.innerHTML = `
+    <span style="display:inline-flex;align-items:center;gap:6px;justify-content:center;">
+      <svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" style="width:14px;height:14px;animation:spin 1s linear infinite;">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" style="opacity:0.25;"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" style="opacity:0.75;"></path>
+      </svg>
+      Upscaling...
+    </span>
+  `;
+
+  let baseId, promptText, bypassLlm, forceConsistency;
+  if (item.parent_id) {
+    baseId = item.parent_id;
+    promptText = item.prompt_original;
+    bypassLlm = item.bypass_llm || false;
+    forceConsistency = item.force_consistency || false;
+  } else {
+    baseId = item.id;
+    promptText = "";
+    bypassLlm = true;
+    forceConsistency = false;
+  }
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        base_id: baseId, 
+        prompt: promptText,
+        upscale_input: true,
+        bypass_llm: bypassLlm,
+        force_consistency: forceConsistency
+      })
+    });
+    if (!res.ok) {
+      alert('Error submitting upscale request.');
+    }
+  } catch(e) {
+    alert('Server connection error.');
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.innerHTML = originalHTML;
+    
+    closeImageModal();
+
+    if (viewMode === 'roots') {
+      await navigateToLineage(baseId);
+    } else {
+      await loadFirstPage();
+    }
+  }
+}
+
+async function reprocessCurrent() {
+  const item = galleryItems[modalIndex];
+  if (!item || !item.parent_id) return;
+
+  const btn = document.getElementById('btnReprocessCurrent');
+  const originalHTML = btn.innerHTML;
+  btn.disabled = true;
+  btn.style.opacity = '0.7';
+  btn.innerHTML = `
+    <span style="display:inline-flex;align-items:center;gap:6px;justify-content:center;">
+      <svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" style="width:14px;height:14px;animation:spin 1s linear infinite;">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" style="opacity:0.25;"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" style="opacity:0.75;"></path>
+      </svg>
+      Reprocessing...
+    </span>
+  `;
+
+  try {
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        base_id: item.parent_id, 
+        prompt: item.prompt_original,
+        upscale_input: item.upscale_input || false,
+        bypass_llm: item.bypass_llm || false,
+        force_consistency: item.force_consistency || false
+      })
+    });
+    if (!res.ok) {
+      alert('Error submitting reprocess request.');
+    }
+  } catch(e) {
+    alert('Server connection error.');
+  } finally {
+    btn.disabled = false;
+    btn.style.opacity = '1';
+    btn.innerHTML = originalHTML;
+    
+    closeImageModal();
+
+    if (viewMode === 'roots') {
+      await navigateToLineage(item.parent_id);
+    } else {
+      await loadFirstPage();
+    }
+  }
+}
+
+// ── Upload ────────────────────────────────────────────────────────────────────
+document.getElementById('uploadInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  const btn = e.target.nextElementSibling;
+  const originalHTML = btn ? btn.innerHTML : null;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = 'Uploading...';
+  }
+
+  const fd = new FormData();
+  fd.append('file', file);
+  
+  try {
+    await fetch('/api/upload', { method: 'POST', body: fd });
+  } catch(e) {
+    alert('Error uploading image.');
+  } finally {
+    if (btn && originalHTML) {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+    }
+    e.target.value = '';
+    await loadFirstPage();
+  }
+});
+</script>
+</body>
+</html>

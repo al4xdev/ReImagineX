@@ -1,0 +1,16 @@
+# Virtual environment
+.venv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime data directory (images, state, saved config)
+gallery_data/
+
+# Legacy data directory
+galeria_dados/
+
+# Environment file (contains API keys)
+.env
