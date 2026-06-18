@@ -4,6 +4,14 @@ ReImagineX is a fluid, high-performance web gallery and image-to-image variation
 
 ---
 
+## ✦ Previews
+
+| Main Gallery | Prompt & Details | Variation Editor |
+| :---: | :---: | :---: |
+| ![Main Gallery](assets/main_menu.png) | ![Prompt & Details Drawer](assets/show_prompts.png) | ![Variation Editor](assets/edit_menu.png) |
+
+---
+
 ## ✦ Key Features
 
 - **Linear & Lineage-based Navigation:** Organize generations by lineage. Click on a root image to explore all its child variations and iterations.
