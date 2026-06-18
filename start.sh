@@ -30,4 +30,4 @@ fi
 
 # Start the server
 echo "🚀 Starting ReImagineX server..."
-python server.py
+python src/server.py

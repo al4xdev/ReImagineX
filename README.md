@@ -70,7 +70,7 @@ You can quickly boot the server by running the startup script:
 Alternatively, launch the local development web server manually:
 
 ```bash
-uv run python server.py
+uv run python src/server.py
 ```
 
 The application will be accessible at: `http://localhost:8888`
