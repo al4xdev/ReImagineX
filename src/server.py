@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Modularized Imports
 from config import load_settings, save_settings
-from state_manager import load_state, save_state, state_lock, _load, _save, delete_item_recursive
+from state_manager import load_state, save_state, state_lock, _load, _save, delete_item_reparent
 from workflow import build_generation_workflow
 
 # ── Configurations & Initial State ───────────────────────────────────────────
@@ -508,7 +508,7 @@ async def delete_items(req: DeleteRequest):
         
         for item_id in req.ids:
             if any(i["id"] == item_id for i in current_state):
-                current_state, removed_ids = delete_item_recursive(item_id, current_state)
+                current_state, removed_ids = delete_item_reparent(item_id, current_state)
                 all_removed_ids.extend(removed_ids)
                 
         _save(current_state)

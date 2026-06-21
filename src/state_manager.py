@@ -32,18 +32,22 @@ async def save_state(state: list) -> None:
     async with state_lock:
         _save(state)
 
-def delete_item_recursive(item_id: str, state: list) -> tuple[list, list[str]]:
+def delete_item_reparent(item_id: str, state: list) -> tuple[list, list[str]]:
     """
-    Recursively deletes an item and all its children/descendants from the state.
-    Returns the new state list and a list of all removed IDs.
+    Deletes the item with item_id, and reparents all its immediate children
+    to have their parent_id set to the deleted item's parent_id.
+    Returns the new state list and a list containing the deleted item_id.
     """
-    children = [i for i in state if i.get("parent_id") == item_id]
-    removed_ids = [item_id]
-    
-    # Recursively collect child IDs and filter state
-    for child in children:
-        _, child_removed_ids = delete_item_recursive(child["id"], state)
-        removed_ids.extend(child_removed_ids)
-        
-    new_state = [i for i in state if i["id"] not in removed_ids]
-    return new_state, removed_ids
+    parent_id = None
+    for item in state:
+        if item["id"] == item_id:
+            parent_id = item.get("parent_id")
+            break
+            
+    # Reparent immediate children
+    for item in state:
+        if item.get("parent_id") == item_id:
+            item["parent_id"] = parent_id
+            
+    new_state = [i for i in state if i["id"] != item_id]
+    return new_state, [item_id]

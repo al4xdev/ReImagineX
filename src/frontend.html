@@ -1085,6 +1085,31 @@ function renderGallery() {
     header.querySelector('#btnBackToRoots').addEventListener('click', navigateToRoots);
   }
 
+  function bindCardActions(cardEl, itemEl) {
+    let pressTimer = null;
+    const startPress = (e) => {
+      if (isSelectionMode) return;
+      if (e.touches && e.touches.length > 1) {
+        clearTimeout(pressTimer);
+        return;
+      }
+      pressTimer = setTimeout(() => {
+        showCardActionsOverlay(cardEl, itemEl);
+      }, 600);
+    };
+    const cancelPress = () => {
+      clearTimeout(pressTimer);
+    };
+    cardEl.addEventListener('touchstart', startPress, { passive: true });
+    cardEl.addEventListener('touchend', cancelPress, { passive: true });
+    cardEl.addEventListener('touchmove', cancelPress, { passive: true });
+    cardEl.addEventListener('contextmenu', (e) => {
+      if (isSelectionMode) return;
+      e.preventDefault();
+      showCardActionsOverlay(cardEl, itemEl);
+    });
+  }
+
   galleryItems.forEach((item, idx) => {
     const card = document.createElement('div');
     card.className = 'gallery-card';
@@ -1109,6 +1134,39 @@ function renderGallery() {
             <p style="font-size:10px;color:#9ca3af;margin-top:-8px;font-family:monospace;font-weight:600;">${progress}%</p>
           ` : ''}
         </div>`;
+      if (!isSelectionMode) {
+        if (viewMode === 'roots' && item.parent_id === null) {
+          card.addEventListener('click', () => navigateToLineage(item.id));
+        }
+      }
+    } else if (item.status === 'failed') {
+      card.innerHTML = `
+        <div style="position:relative;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;background:#0f172a;padding:16px;border:1px dashed #ef4444;border-radius:12px;cursor:pointer;">
+          <p style="font-size:12px;color:#ef4444;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">Generation Failed</p>
+          <p style="font-size:11px;color:#9ca3af;text-align:center;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${item.prompt_original || item.prompt || 'Failed'}</p>
+          <button class="retry-failed-btn"
+            style="background:#2563eb;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:11px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px;transition:background 0.15s;z-index:10;"
+            onmouseover="this.style.background='#1d4ed8'"
+            onmouseout="this.style.background='#2563eb'">
+            Retry / Reprocess
+          </button>
+        </div>`;
+      const retryBtn = card.querySelector('.retry-failed-btn');
+      retryBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        retrySingleFailed(item);
+      });
+      if (!isSelectionMode) {
+        if (viewMode === 'roots' && item.parent_id === null) {
+          card.addEventListener('click', () => navigateToLineage(item.id));
+        } else {
+          card.addEventListener('click', (e) => {
+            retrySingleFailed(item);
+          });
+        }
+        bindCardActions(card, item);
+      }
     } else {
       const img = document.createElement('img');
       const ext = item.filename.split('.').pop();
@@ -1124,34 +1182,7 @@ function renderGallery() {
         } else {
           card.addEventListener('click', () => openImageModal(idx));
         }
-
-        // Long press / right-click action overlay for completed images
-        let pressTimer = null;
-        
-        const startPress = (e) => {
-          if (isSelectionMode) return;
-          if (e.touches && e.touches.length > 1) {
-            clearTimeout(pressTimer);
-            return;
-          }
-          pressTimer = setTimeout(() => {
-            showCardActionsOverlay(card, item);
-          }, 600);
-        };
-
-        const cancelPress = () => {
-          clearTimeout(pressTimer);
-        };
-
-        card.addEventListener('touchstart', startPress, { passive: true });
-        card.addEventListener('touchend', cancelPress, { passive: true });
-        card.addEventListener('touchmove', cancelPress, { passive: true });
-        
-        card.addEventListener('contextmenu', (e) => {
-          if (isSelectionMode) return;
-          e.preventDefault();
-          showCardActionsOverlay(card, item);
-        });
+        bindCardActions(card, item);
       }
     }
 
@@ -2057,6 +2088,9 @@ function showCardActionsOverlay(card, item) {
   });
 
   const upscaleBtn = overlay.querySelector('.overlay-btn-upscale');
+  if (item.status === 'failed') {
+    upscaleBtn.style.display = 'none';
+  }
   upscaleBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -2177,6 +2211,37 @@ async function reprocessCurrent() {
     } else {
       await loadFirstPage();
     }
+  }
+}
+
+async function retrySingleFailed(item) {
+  if (!item) return;
+  const isUpscale = item.upscale_input;
+  try {
+    const payload = {
+      base_id: item.parent_id || item.id,
+      prompt: item.prompt_original || item.prompt,
+      upscale_input: isUpscale,
+      bypass_llm: true,
+      force_consistency: item.force_consistency || false,
+    };
+    if (isUpscale) {
+      payload.upscale_target_id = item.id;
+    }
+
+    const res = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      showToast('Retrying generation...');
+      await loadFirstPage();
+    } else {
+      alert('Error submitting retry request.');
+    }
+  } catch(e) {
+    alert('Server connection error.');
   }
 }
 
