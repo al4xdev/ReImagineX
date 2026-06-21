@@ -138,6 +138,8 @@ async def handle_prompt_failure(pid: str) -> None:
             _save(current_state)
             print(f"Marked prompt {pid} as failed via WebSocket execution error.")
 
+active_progress = {}
+
 async def websocket_listener() -> None:
     backoff = 1.0
     while True:
@@ -158,14 +160,32 @@ async def websocket_listener() -> None:
                     
                     etype = event.get("type")
                     data = event.get("data", {})
-                    if etype == "executed":
+                    if etype == "progress":
                         pid = data.get("prompt_id")
+                        val = data.get("value", 0)
+                        mx = data.get("max", 1)
+                        if pid:
+                            active_progress[pid] = val / mx if mx > 0 else 0.0
+                    elif etype == "executing":
+                        pid = data.get("prompt_id")
+                        node = data.get("node")
+                        if pid:
+                            if node is None:
+                                active_progress.pop(pid, None)
+                            else:
+                                if pid not in active_progress:
+                                    active_progress[pid] = 0.0
+                    elif etype == "executed":
+                        pid = data.get("prompt_id")
+                        if pid:
+                            active_progress.pop(pid, None)
                         output = data.get("output", {})
                         if pid and "3" in output and "images" in output["3"]:
                             asyncio.create_task(handle_node_executed(pid, output["3"]["images"]))
                     elif etype == "execution_error":
                         pid = data.get("prompt_id")
                         if pid:
+                            active_progress.pop(pid, None)
                             await handle_prompt_failure(pid)
         except Exception as e:
             print(f"WebSocket listener error: {e}. Reconnecting in {backoff}s...")
@@ -294,10 +314,18 @@ async def get_state(limit: int = 20, offset: int = 0, root_id: str = None):
         if not root:
             raise HTTPException(status_code=404, detail="Image not found")
         subtree = [root] + get_descendants(root_id)
+        for item in subtree:
+            pid = item.get("prompt_id")
+            if pid and pid in active_progress:
+                item["progress"] = active_progress[pid]
         return subtree[offset : offset + limit]
     else:
         # Return only root images (no parent)
         roots = [i for i in state if i.get("parent_id") is None]
+        for item in roots:
+            pid = item.get("prompt_id")
+            if pid and pid in active_progress:
+                item["progress"] = active_progress[pid]
         return roots[offset : offset + limit]
 
 @app.post("/api/upload")
@@ -333,6 +361,7 @@ class PromptRequest(BaseModel):
     upscale_input: bool = False
     bypass_llm: bool = False
     force_consistency: bool = False
+    upscale_target_id: str = None
 
 async def expand_prompt_openrouter(user_prompt: str) -> str:
     settings = load_settings()
@@ -377,11 +406,18 @@ async def expand_prompt_openrouter(user_prompt: str) -> str:
 async def generate(req: PromptRequest):
     settings = load_settings()
     state = await load_state()
-    base_item = next((i for i in state if i["id"] == req.base_id), None)
-    if not base_item or not base_item.get("comfyName"):
-        raise HTTPException(status_code=400, detail="Invalid base image.")
+    
+    if req.upscale_target_id:
+        target_item = next((i for i in state if i["id"] == req.upscale_target_id), None)
+        if not target_item or not target_item.get("comfyName"):
+            raise HTTPException(status_code=400, detail="Invalid upscale target image.")
+        base_item = target_item
+    else:
+        base_item = next((i for i in state if i["id"] == req.base_id), None)
+        if not base_item or not base_item.get("comfyName"):
+            raise HTTPException(status_code=400, detail="Invalid base image.")
         
-    # Re-upload the base image to ComfyUI to guarantee it exists in ComfyUI's input directory (in case ComfyUI restarted/cleared input)
+    # Re-upload the base image to ComfyUI to guarantee it exists in ComfyUI's input directory
     local_path = os.path.join(STARTUP_IMG_DIR, base_item["filename"])
     if os.path.exists(local_path):
         try:
@@ -397,7 +433,6 @@ async def generate(req: PromptRequest):
         prompt_final = await expand_prompt_openrouter(req.prompt)
 
     # ── Consistency Formatting (Force identical image) ──────────────────────
-    # We apply this after LLM expansion so that the LLM's system prompt doesn't strip it.
     if req.force_consistency:
         prompt_final = f"Keep everything identical, only modify: {prompt_final}"
 
@@ -420,29 +455,44 @@ async def generate(req: PromptRequest):
             raise HTTPException(status_code=500, detail="Error sending request to ComfyUI")
         prompt_id = res.json()["prompt_id"]
         
-    new_id = str(uuid.uuid4())
-    # The file is generated inside a dedicated folder named after parent image (Lineage)
-    filename = f"{req.base_id}/{new_id}.png"
-    
-    new_item = {
-        "id": new_id,
-        "parent_id": req.base_id,
-        "status": "pending",
-        "filename": filename,
-        "comfyName": None,
-        "prompt_id": prompt_id,
-        "prompt": prompt_final,
-        "prompt_original": req.prompt,
-        "bypass_llm": req.bypass_llm,
-        "force_consistency": req.force_consistency,
-        "upscale_input": req.upscale_input
-    }
-                
-    async with state_lock:
-        state = _load()
-        state.insert(0, new_item)
-        _save(state)
-    return new_item
+    if req.upscale_target_id:
+        async with state_lock:
+            current_state = _load()
+            for entry in current_state:
+                if entry["id"] == req.upscale_target_id:
+                    entry["status"] = "pending"
+                    entry["prompt_id"] = prompt_id
+                    entry["upscale_input"] = True
+                    if prompt_final:
+                        entry["prompt"] = prompt_final
+                    break
+            _save(current_state)
+            
+            updated_item = next((i for i in current_state if i["id"] == req.upscale_target_id), None)
+            return updated_item
+    else:
+        new_id = str(uuid.uuid4())
+        filename = f"{req.base_id}/{new_id}.png"
+        
+        new_item = {
+            "id": new_id,
+            "parent_id": req.base_id,
+            "status": "pending",
+            "filename": filename,
+            "comfyName": None,
+            "prompt_id": prompt_id,
+            "prompt": prompt_final,
+            "prompt_original": req.prompt,
+            "bypass_llm": req.bypass_llm,
+            "force_consistency": req.force_consistency,
+            "upscale_input": req.upscale_input
+        }
+                    
+        async with state_lock:
+            state = _load()
+            state.insert(0, new_item)
+            _save(state)
+        return new_item
 
 # ── Bulk Delete (Cascade Deletion with ComfyUI Cancellation) ──────────────────
 class DeleteRequest(BaseModel):
@@ -579,6 +629,18 @@ async def get_comfy_models():
             "vae_models": [],
             "upscale_models": [],
         }
+
+@app.get("/api/comfy-status")
+async def get_comfy_status():
+    settings = load_settings()
+    try:
+        async with httpx.AsyncClient(timeout=1.0) as client:
+            resp = await client.get(f"{settings.comfy_url}/queue")
+            if resp.status_code == 200:
+                return {"status": "connected"}
+    except Exception:
+        pass
+    return {"status": "disconnected"}
 
 app.mount("/images", StaticFiles(directory=STARTUP_IMG_DIR), name="images")
 

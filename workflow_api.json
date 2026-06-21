@@ -31,7 +31,7 @@
     "inputs": {
       "filename_prefix": "Flux2-Klein-Edit",
       "images": [
-        "18",
+        "28",
         0
       ]
     },
@@ -192,7 +192,7 @@
         ]
       },
       "image_a": [
-        "18",
+        "28",
         0
       ],
       "image_b": [
@@ -286,5 +286,17 @@
       "enable_fp16_accumulation": false
     },
     "class_type": "DiffusionModelLoaderKJ"
+  },
+  "28": {
+    "inputs": {
+      "upscale_method": "lanczos",
+      "megapixels": 4.0,
+      "resolution_steps": 8,
+      "image": [
+        "18",
+        0
+      ]
+    },
+    "class_type": "ImageScaleToTotalPixels"
   }
 }
