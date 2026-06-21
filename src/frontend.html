@@ -7,6 +7,17 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>ReImagineX</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon.svg">
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js').catch(err => {
+        console.warn('ServiceWorker registration failed: ', err);
+      });
+    });
+  }
+</script>
 <script src="https://cdn.tailwindcss.com"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -531,6 +542,7 @@ let modalIndex      = 0;
 let currentBaseId   = null;
 let touchStartX     = 0;
 let touchStartY     = 0;
+let isMultiTouch    = false;
 let isDesktop       = window.matchMedia('(min-width: 768px)').matches;
 const dealtCardIds  = new Set();
 
@@ -1262,6 +1274,11 @@ let gestureLocked = null; // 'horizontal' | 'vertical' | 'prevented' | null
 let drawerHeight = 0;
 
 imageModal.addEventListener('touchstart', (e) => {
+  if (e.touches.length > 1) {
+    isMultiTouch = true;
+    return;
+  }
+  isMultiTouch = false;
   touchStartX = e.touches[0].clientX;
   touchStartY = e.touches[0].clientY;
   gestureLocked = null;
@@ -1275,7 +1292,11 @@ imageModal.addEventListener('touchstart', (e) => {
 }, { passive: true });
 
 imageModal.addEventListener('touchmove', (e) => {
-  if (e.touches.length > 1) return; // Only track single touch
+  if (e.touches.length > 1) {
+    isMultiTouch = true;
+    return;
+  }
+  if (isMultiTouch) return;
   
   const dx = e.touches[0].clientX - touchStartX;
   const dy = e.touches[0].clientY - touchStartY;
@@ -1329,6 +1350,24 @@ imageModal.addEventListener('touchmove', (e) => {
 }, { passive: true });
 
 imageModal.addEventListener('touchend', (e) => {
+  if (isMultiTouch || e.touches.length > 0) {
+    const drawer = document.getElementById('detailsDrawer');
+    if (drawer) {
+      drawer.style.transition = 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1)';
+      drawer.style.transform = '';
+    }
+    viewImage.style.transition = 'transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease';
+    viewImage.style.transform = 'none';
+    viewImage.style.opacity = '1';
+    gestureLocked = null;
+    if (e.touches.length === 0) {
+      isMultiTouch = false;
+    } else {
+      isMultiTouch = true;
+    }
+    return;
+  }
+
   const dx = e.changedTouches[0].clientX - touchStartX;
   const dy = e.changedTouches[0].clientY - touchStartY;
   

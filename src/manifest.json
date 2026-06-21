@@ -1,0 +1,18 @@
+{
+  "name": "ReImagineX",
+  "short_name": "ReImagineX",
+  "description": "ReImagineX - Fluid Variation Editor & Image lineage browser",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#0b0f19",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

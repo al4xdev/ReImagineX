@@ -617,5 +617,26 @@ def serve_frontend():
     else:
         raise HTTPException(status_code=404, detail="frontend.html not found.")
 
+@app.get("/manifest.json")
+async def get_manifest():
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    if os.path.exists(manifest_path):
+        return FileResponse(manifest_path, media_type="application/json")
+    raise HTTPException(status_code=404, detail="manifest.json not found")
+
+@app.get("/sw.js")
+async def get_sw():
+    sw_path = os.path.join(os.path.dirname(__file__), "sw.js")
+    if os.path.exists(sw_path):
+        return FileResponse(sw_path, media_type="application/javascript")
+    raise HTTPException(status_code=404, detail="sw.js not found")
+
+@app.get("/icon.svg")
+async def get_icon():
+    icon_path = os.path.join(os.path.dirname(__file__), "icon.svg")
+    if os.path.exists(icon_path):
+        return FileResponse(icon_path, media_type="image/svg+xml")
+    raise HTTPException(status_code=404, detail="icon.svg not found")
+
 if __name__ == "__main__":
     uvicorn.run("server:app", host="0.0.0.0", port=8888, reload=False)
