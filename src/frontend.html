@@ -474,6 +474,11 @@
       </div>
 
       <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">ComfyUI Root Path</label>
+        <input type="text" id="cfgComfyRoot" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
+      </div>
+
+      <div>
         <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">OpenRouter API Key</label>
         <input type="password" id="cfgApiKey" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
       </div>
@@ -1492,6 +1497,7 @@ async function openConfigModal() {
 
   // Text fields
   document.getElementById('cfgComfyUrl').value = cfg.comfy_url || '';
+  document.getElementById('cfgComfyRoot').value = cfg.comfy_root || '';
   document.getElementById('cfgApiKey').value = cfg.openrouter_api_key || '';
   document.getElementById('cfgOpenRouterModels').value = (cfg.openrouter_models || []).join('\n');
   document.getElementById('cfgSystemPrompt').value = cfg.system_prompt || '';
@@ -1519,6 +1525,7 @@ function selectVal(id) {
 
 async function saveConfig() {
   const comfyUrl = selectVal('cfgComfyUrl');
+  const comfyRoot = selectVal('cfgComfyRoot');
   const apiKey = selectVal('cfgApiKey');
   const openRouterModels = document.getElementById('cfgOpenRouterModels').value.split('\n').map(m => m.trim()).filter(m => m.length > 0);
   const systemPrompt = document.getElementById('cfgSystemPrompt').value;
@@ -1551,7 +1558,8 @@ async function saveConfig() {
         upscale_model_name: upscaleModel,
         input_upscale_model_name: inputUpscaleModel,
         comfy_url: comfyUrl,
-        openrouter_api_key: apiKey
+        openrouter_api_key: apiKey,
+        comfy_root: comfyRoot
       })
     });
 

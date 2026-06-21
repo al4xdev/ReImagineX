@@ -4,6 +4,8 @@ import copy
 import asyncio
 import httpx
 import uvicorn
+import websockets
+import json
 from contextlib import asynccontextmanager
 from PIL import Image
 from pydantic import BaseModel
@@ -53,6 +55,123 @@ async def upload_to_comfy(filepath: str, filename: str) -> str:
             res.raise_for_status()
             return res.json()["name"]
 
+CLIENT_ID = str(uuid.uuid4())
+
+def get_ws_url(comfy_url: str) -> str:
+    url = comfy_url.rstrip("/")
+    if url.startswith("https://"):
+        return f"wss://{url[8:]}/ws?clientId={CLIENT_ID}"
+    elif url.startswith("http://"):
+        return f"ws://{url[7:]}/ws?clientId={CLIENT_ID}"
+    else:
+        return f"ws://{url}/ws?clientId={CLIENT_ID}"
+
+async def handle_node_executed(pid: str, images_list: list[dict]) -> None:
+    try:
+        settings = load_settings()
+        state = await load_state()
+        pending = [i for i in state if i["status"] == "pending" and i.get("prompt_id") == pid]
+        if not pending:
+            return
+
+        item = pending[0]
+        img_data = images_list[0]
+        local_fn = item["filename"]
+        local_path = os.path.join(STARTUP_IMG_DIR, local_fn)
+        url = f"{settings.comfy_url}/view?filename={img_data['filename']}&subfolder={img_data['subfolder']}&type={img_data['type']}"
+
+        linked = False
+        if settings.comfy_root:
+            comfy_output_file = os.path.join(settings.comfy_root, "output", img_data.get("subfolder", ""), img_data["filename"])
+            if os.path.exists(comfy_output_file):
+                try:
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                    if os.path.exists(local_path):
+                        os.unlink(local_path)
+                    os.link(comfy_output_file, local_path)
+                    
+                    # Generate thumbnail from local_path
+                    thumb_path = local_path.replace(STARTUP_IMG_DIR, STARTUP_THUMB_DIR)
+                    thumb_path = os.path.splitext(thumb_path)[0] + ".jpg"
+                    os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+                    try:
+                        img = Image.open(local_path)
+                        img.thumbnail((400, 400))
+                        if img.mode in ("RGBA", "P"):
+                            img = img.convert("RGB")
+                        img.save(thumb_path, "JPEG", quality=80)
+                    except Exception as e_thumb:
+                        print(f"Thumbnail error: {e_thumb}")
+                    linked = True
+                    print(f"Created Unix hard link via WebSocket from {comfy_output_file} to {local_path}")
+                except Exception as e_link:
+                    print(f"Failed to create hard link via WebSocket: {e_link}")
+
+        if not linked:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res_img = await client.get(url)
+                save_image_with_thumbnail(local_path, res_img.content)
+
+        comfy_name = await upload_to_comfy(local_path, local_fn)
+
+        async with state_lock:
+            current_state = _load()
+            for entry in current_state:
+                if entry["id"] == item["id"]:
+                    entry["status"] = "completed"
+                    entry["comfyName"] = comfy_name
+                    break
+            _save(current_state)
+            print(f"Updated item {item['id']} status to completed via WebSocket executed event.")
+    except Exception as e:
+        print(f"Error in handle_node_executed: {e}")
+
+async def handle_prompt_failure(pid: str) -> None:
+    async with state_lock:
+        current_state = _load()
+        updated = False
+        for entry in current_state:
+            if entry.get("prompt_id") == pid and entry.get("status") == "pending":
+                entry["status"] = "failed"
+                updated = True
+        if updated:
+            _save(current_state)
+            print(f"Marked prompt {pid} as failed via WebSocket execution error.")
+
+async def websocket_listener() -> None:
+    backoff = 1.0
+    while True:
+        try:
+            settings = load_settings()
+            ws_url = get_ws_url(settings.comfy_url)
+            print(f"Connecting to ComfyUI WebSocket at {ws_url}...")
+            async with websockets.connect(ws_url) as ws:
+                print("Connected to ComfyUI WebSocket.")
+                backoff = 1.0
+                async for message in ws:
+                    if isinstance(message, bytes):
+                        continue
+                    try:
+                        event = json.loads(message)
+                    except Exception:
+                        continue
+                    
+                    etype = event.get("type")
+                    data = event.get("data", {})
+                    if etype == "executed":
+                        pid = data.get("prompt_id")
+                        output = data.get("output", {})
+                        if pid and "3" in output and "images" in output["3"]:
+                            asyncio.create_task(handle_node_executed(pid, output["3"]["images"]))
+                    elif etype == "execution_error":
+                        pid = data.get("prompt_id")
+                        if pid:
+                            await handle_prompt_failure(pid)
+        except Exception as e:
+            print(f"WebSocket listener error: {e}. Reconnecting in {backoff}s...")
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30.0)
+
 async def check_comfy_queue():
     while True:
         try:
@@ -74,17 +193,45 @@ async def check_comfy_queue():
                         pid = item["prompt_id"]
                         if pid in history:
                             outputs = history[pid].get("outputs", {})
-                            # Node "3" remains the SaveImage node in our workflow
                             if "3" in outputs and "images" in outputs["3"]:
                                 img_data = outputs["3"]["images"][0]
                                 url = f"{settings.comfy_url}/view?filename={img_data['filename']}&subfolder={img_data['subfolder']}&type={img_data['type']}"
-                                res_img = await client.get(url)
                                 
                                 # Resolve local path and create directory lineage structure
                                 local_fn = item["filename"]
                                 local_path = os.path.join(STARTUP_IMG_DIR, local_fn)
 
-                                save_image_with_thumbnail(local_path, res_img.content)
+                                # Try hard link fallback or fetch via network
+                                linked = False
+                                if settings.comfy_root:
+                                    comfy_output_file = os.path.join(settings.comfy_root, "output", img_data.get("subfolder", ""), img_data["filename"])
+                                    if os.path.exists(comfy_output_file):
+                                        try:
+                                            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                                            if os.path.exists(local_path):
+                                                os.unlink(local_path)
+                                            os.link(comfy_output_file, local_path)
+                                            # Generate thumbnail
+                                            thumb_path = local_path.replace(STARTUP_IMG_DIR, STARTUP_THUMB_DIR)
+                                            thumb_path = os.path.splitext(thumb_path)[0] + ".jpg"
+                                            os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+                                            try:
+                                                img = Image.open(local_path)
+                                                img.thumbnail((400, 400))
+                                                if img.mode in ("RGBA", "P"):
+                                                    img = img.convert("RGB")
+                                                img.save(thumb_path, "JPEG", quality=80)
+                                            except Exception as e_thumb:
+                                                print(f"Thumbnail error: {e_thumb}")
+                                            linked = True
+                                            print(f"Created Unix hard link from {comfy_output_file} to {local_path}")
+                                        except Exception as e_link:
+                                            print(f"Failed to create hard link: {e_link}")
+
+                                if not linked:
+                                    res_img = await client.get(url)
+                                    save_image_with_thumbnail(local_path, res_img.content)
+
                                 comfy_name = await upload_to_comfy(local_path, local_fn)
                                 
                                 # Atomic update under lock
@@ -117,10 +264,12 @@ async def check_comfy_queue():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     task = asyncio.create_task(check_comfy_queue())
+    ws_task = asyncio.create_task(websocket_listener())
     yield
     task.cancel()
+    ws_task.cancel()
     try:
-        await task
+        await asyncio.gather(task, ws_task, return_exceptions=True)
     except asyncio.CancelledError:
         pass
 
@@ -358,6 +507,7 @@ class ConfigSchema(BaseModel):
     input_upscale_model_name: str
     comfy_url: str
     openrouter_api_key: str
+    comfy_root: str | None = None
 
 @app.get("/api/config")
 async def get_config():
@@ -371,7 +521,8 @@ async def get_config():
         "upscale_model_name": settings.upscale_model_name,
         "input_upscale_model_name": settings.input_upscale_model_name,
         "comfy_url": settings.comfy_url,
-        "openrouter_api_key": settings.openrouter_api_key
+        "openrouter_api_key": settings.openrouter_api_key,
+        "comfy_root": settings.comfy_root
     }
 
 @app.post("/api/config")
@@ -386,6 +537,7 @@ async def update_config(cfg: ConfigSchema):
     settings.input_upscale_model_name = cfg.input_upscale_model_name
     settings.comfy_url = cfg.comfy_url
     settings.openrouter_api_key = cfg.openrouter_api_key
+    settings.comfy_root = cfg.comfy_root or ""
     save_settings(settings)
     return {"status": "ok"}
 

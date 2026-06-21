@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     # Core system settings (can be overridden via env)
     comfy_url: str = Field(default="http://127.0.0.1:8001", validation_alias="COMFY_URL")
     data_dir: str = Field(default="gallery_data", validation_alias="DATA_DIR")
+    comfy_root: str = Field(default="", validation_alias="COMFY_ROOT")
     openrouter_api_key: str = Field(
         default="",
         validation_alias="OPENROUTER_API_KEY"
@@ -67,6 +68,7 @@ def save_settings(settings: Settings) -> None:
         "input_upscale_model_name": settings.input_upscale_model_name,
         "comfy_url": settings.comfy_url,
         "openrouter_api_key": settings.openrouter_api_key,
+        "comfy_root": settings.comfy_root,
     }
     with open(config_path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
