@@ -1,0 +1,16 @@
+services:
+  reimaginex:
+    image: ghcr.io/al4xdev/reimaginex:latest
+    container_name: reimaginex
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+    environment:
+      COMFY_URL: http://host.docker.internal:8001
+    volumes:
+      - reimaginex-data:/app/gallery_data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  reimaginex-data:

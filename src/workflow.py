@@ -1,18 +1,24 @@
 import copy
 import json
-import os
+from pathlib import Path
+from typing import Any
+
+Workflow = dict[str, Any]
 
 
-def _load_workflow_base() -> dict:
-    json_path = os.path.join(os.path.dirname(__file__), "..", "workflow_api.json")
-    with open(json_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def _load_workflow_base() -> Workflow:
+    json_path = Path(__file__).resolve().parent.parent / "workflow_api.json"
+    with json_path.open("r", encoding="utf-8") as handle:
+        value = json.load(handle)
+    if not isinstance(value, dict):
+        raise ValueError("workflow_api.json must contain a JSON object")
+    return value
 
 
-_WORKFLOW_CACHE: dict | None = None
+_WORKFLOW_CACHE: Workflow | None = None
 
 
-def _get_workflow_base() -> dict:
+def _get_workflow_base() -> Workflow:
     global _WORKFLOW_CACHE
     if _WORKFLOW_CACHE is None:
         _WORKFLOW_CACHE = _load_workflow_base()
@@ -28,8 +34,8 @@ def build_generation_workflow(
     clip_model_name: str,
     vae_model_name: str,
     upscale_model_name: str,
-    input_upscale_model_name: str
-) -> dict:
+    input_upscale_model_name: str,
+) -> Workflow:
     wf = copy.deepcopy(_get_workflow_base())
 
     # Inject dynamic model configurations

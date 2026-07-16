@@ -1,122 +1,156 @@
 # ReImagineX ✦
 
-ReImagineX is a fluid, high-performance web gallery and image-to-image variations interface. Heavily inspired by the clean aesthetics and user interactions of Grok's (xAI) "Imagine" tool, it provides a seamless workflow to generate, iterate, upscale, and organize image lineages locally using a **ComfyUI** backend and **OpenRouter** LLM prompt refinement.
+[![CI](https://github.com/al4xdev/ReImagineX/actions/workflows/ci.yml/badge.svg)](https://github.com/al4xdev/ReImagineX/actions/workflows/ci.yml)
+[![Container](https://github.com/al4xdev/ReImagineX/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/al4xdev/ReImagineX/actions/workflows/docker-publish.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-10b981.svg)](LICENSE)
 
----
+ReImagineX is a local-first, mobile-friendly image-to-image gallery for ComfyUI. Upload an image, create variations, inspect prompts, upscale results, and navigate the complete generation lineage without leaving the browser.
 
-## ✦ Previews
+The interface is inspired by the fast, gesture-driven workflow of modern image tools while keeping generation, images, and configuration under your control.
 
-| Main Gallery | Prompt & Details | Variation Editor |
+> [!NOTE]
+> ReImagineX is a portfolio release provided as open-source software. It has no support SLA, but issues and community contributions are welcome.
+
+## Preview
+
+| Main gallery | Prompt details | Variation editor |
 | :---: | :---: | :---: |
-| ![Main Gallery](assets/main_menu.png) | ![Prompt & Details Drawer](assets/show_prompts.png) | ![Variation Editor](assets/edit_menu.png) |
+| ![Main gallery](assets/main_menu.png) | ![Prompt details drawer](assets/show_prompts.png) | ![Variation editor](assets/edit_menu.png) |
 
----
+## Why ReImagineX
 
-## ✦ Key Features
+Typical ComfyUI image-to-image iteration involves moving repeatedly between a workflow canvas, an output folder, and a prompt editor. ReImagineX keeps that loop in one visual history:
 
-- **Linear & Lineage-based Navigation:** Organize generations by lineage. Click on a root image to explore all its child variations and iterations.
-- **Natural Touch Gestures (Mobile optimized):**
-  - **Swipe Up** anywhere on the image view to pull up the Prompt & Quick Actions drawer.
-  - **Swipe Down** to close the image viewer and return to the gallery grid (or slide the drawer back down).
-  - **Swipe Left/Right** on the image viewport to slide transition between completed images.
-- **Premium Fluid Animations:**
-  - **Staggered Card-Dealing Intro:** Cards fan out dynamically with 3D rotation, scaling, and slide-in cascading when loading the gallery.
-  - **Zoom-Fade Opening:** Opening/closing full images scales the viewport smoothly.
-  - **Swipe Transitions:** Swiping left/right slides the old image out and the new image in dynamically.
-- **Direct Drawer Controls:**
-  - **Upscale (4x):** Performs a high-resolution workflow pass using the parent's base image.
-  - **Reprocess:** Resubmits the exact same configuration and prompt to generate a new variation.
-- **Bulk Select & Delete:** Delete multiple images at once, cascading recursively to all their lineage descendants.
-- **Auto-Cancellation on interrupt:** Deleting or canceling a pending generation sends a signal to ComfyUI to immediately cancel the job and clear the execution queue.
-- **Dynamic Configuration:** Adjust API keys, ComfyUI URLs, diffusion checkpoints, VAE, CLIP, and prompt expansion prompts on the fly via the built-in Settings Panel.
+- each uploaded image becomes the root of a lineage;
+- every variation remains connected to its source;
+- prompts and generation options stay attached to each result;
+- reprocessing and upscaling are available from the image viewer;
+- pending jobs expose progress and can be cancelled;
+- the UI is installable as a PWA and designed for touch gestures.
 
----
+## Features
 
-## ✦ System Architecture & Setup
+- Lineage-based galleries for root images and their variations.
+- Mobile gestures: swipe up for details, down to close, and sideways to navigate.
+- Optional OpenRouter prompt expansion with configurable fallback models.
+- Direct prompt mode when no API key is configured or LLM expansion is bypassed.
+- Dynamic discovery of diffusion, CLIP, VAE, and upscale models from ComfyUI.
+- Input upscaling, output upscaling, reprocessing, and consistency controls.
+- ComfyUI queue monitoring through HTTP and WebSocket events.
+- Local JSON persistence with atomic writes.
+- Thumbnail generation and optional hard-link synchronization with ComfyUI output.
+- Docker images for AMD64 and ARM64.
 
-ReImagineX runs as a fast Python web server (FastAPI) acting as a orchestrator/proxy to your local ComfyUI instance.
+## Requirements
 
-### 1. Prerequisites
+- A running ComfyUI instance.
+- The custom nodes referenced by [`workflow_api.json`](workflow_api.json).
+- Compatible Flux 2 / Klein model, text encoder, VAE, and upscale models.
+- Python 3.12+ and [uv](https://docs.astral.sh/uv/) when running from source.
 
-Before running the server, verify you have:
-- **Python 3.12+**
-- **uv** (high-performance Python package installer)
-- A running **ComfyUI** instance.
+The bundled defaults match the workflow used during development:
 
-### 2. Local Installation
+| Component | Default filename |
+|---|---|
+| Diffusion model | `flux-2-klein-9b-nvfp4.safetensors` |
+| Text encoder | `qwen_3_8b_fp8mixed.safetensors` |
+| VAE | `full_encoder_small_decoder.safetensors` |
+| Output upscaler | `4x-UltraSharpV2.pth` |
+| Input upscaler | `4x_foolhardy_Remacri.pth` |
 
-Clone the repository and run dependencies setup using `uv`:
+These are defaults, not hardcoded requirements. The Settings panel discovers compatible models from the connected ComfyUI instance and lets you replace every filename.
+
+## Run with Docker
 
 ```bash
-# Install dependencies and setup venv
+docker run -d \
+  --name reimaginex \
+  --restart unless-stopped \
+  -p 8888:8888 \
+  --add-host host.docker.internal:host-gateway \
+  -e COMFY_URL=http://host.docker.internal:8001 \
+  -v reimaginex-data:/app/gallery_data \
+  ghcr.io/al4xdev/reimaginex:latest
+```
+
+Open `http://localhost:8888`.
+
+The same setup is available through Compose:
+
+```bash
+docker compose up -d
+```
+
+When ComfyUI runs on the host, set its URL to `http://host.docker.internal:8001` in the container. Change the port if your ComfyUI installation uses another one.
+
+## Run from source
+
+```bash
+git clone https://github.com/al4xdev/ReImagineX.git
+cd ReImagineX
+cp .env.example .env
 uv sync
-```
-
-### 3. Environment Variables Configuration
-
-Create a `.env` file in the root directory (you can copy `.env.example`):
-
-```ini
-# ComfyUI backend URL
-COMFY_URL=http://127.0.0.1:8001
-
-# Data directory for local images and state JSON
-DATA_DIR=gallery_data
-
-# OpenRouter API key (used for prompt expansion)
-OPENROUTER_API_KEY=your_api_key_here
-```
-
-### 4. Running the Web App
-
-You can quickly boot the server by running the startup script:
-
-```bash
 ./start.sh
 ```
 
-Alternatively, launch the local development web server manually:
+Open `http://127.0.0.1:8888`.
+
+The application binds to localhost by default. To expose it on a trusted private network:
 
 ```bash
-uv run python src/server.py
+REIMAGINEX_HOST=0.0.0.0 ./start.sh
 ```
 
-The application will be accessible at: `http://localhost:8888`
+## Configuration
 
----
+Most settings are editable from the frontend:
 
-## ✦ ComfyUI Backend Setup
+- ComfyUI URL and optional local root path;
+- OpenRouter API key, model fallback list, and system prompt;
+- diffusion model, text encoder, VAE, and upscale models.
 
-> [!TIP]
-> A pre-configured API workflow template is available in the project root as [workflow_api.json](workflow_api.json). You can load this file into your ComfyUI interface. If you are missing any custom nodes, use the **ComfyUI Manager** and click **Install Missing Custom Nodes** to install all required dependencies automatically.
+Environment variables can provide initial values:
 
-For the generation workflows to validate successfully, your ComfyUI environment must meet the following configuration requirements:
+```ini
+COMFY_URL=http://127.0.0.1:8001
+DATA_DIR=gallery_data
+COMFY_ROOT=
+OPENROUTER_API_KEY=
+```
 
-### Required Models
-Ensure the following models are downloaded and placed in the respective folders under your ComfyUI directory:
+Runtime images, state, and saved configuration live under `gallery_data/` and are excluded from Git. The OpenRouter key is stored server-side and is never returned by the configuration API.
 
-| Model File | Target Subfolder | Type | Description |
-|---|---|---|---|
-| `flux1-dev-fp8.safetensors` | `models/checkpoints/` | Diffusion (Flux2) | Main generation model |
-| `clip_l.safetensors` | `models/clip/` | CLIP | Language understanding model |
-| `ae.safetensors` | `models/vae/` | VAE | Image encoding and decoding |
-| `4x_foolhardy_Remacri.pth` | `models/upscale_models/` | Upscale | Standard model used for upscaling |
+### ComfyUI workflow
 
-### Required Custom Nodes
-Install these custom nodes in your ComfyUI instance (via ComfyUI Manager or git clone inside `custom_nodes/`):
+[`workflow_api.json`](workflow_api.json) is the API-format workflow used by the application. It currently expects nodes including:
 
-1. **rgthree-comfy** — provides `Seed (rgthree)` and `Image Comparer (rgthree)` nodes.
-2. **DiffusionModelLoaderKJ** — Custom optimized loader for the Flux2 model.
-3. **Flux2 custom nodes** — Custom nodes such as `Flux2Scheduler`, `ReferenceLatent`, `CFGGuider`, and `EmptyFlux2LatentImage`.
+- `DiffusionModelLoaderKJ`;
+- `Flux2Scheduler`;
+- `ReferenceLatent`;
+- `CFGGuider`;
+- `EmptyFlux2LatentImage`;
+- rgthree seed and image comparison nodes;
+- standard CLIP, VAE, image, sampler, and upscale nodes.
 
----
+Use ComfyUI Manager to identify and install missing custom nodes. Model options are loaded dynamically from ComfyUI after the workflow nodes are available.
 
-## ✦ User Guide & Workflow
+## Development
 
-1. **Upload a Base Image:** Click the **Upload** button in the header to import your starting image. This becomes the "Root" of a new lineage tree.
-2. **Generate Variations:**
-   - Click the root image in the gallery to enter its lineage view.
-   - Click the **Create Variation** button (`btnOpenPrompt` pen icon) in the top-right corner of the modal.
-   - Enter your prompt, toggle options (Bypass LLM, Force consistency, Input Upscale), and click **Generate**.
-3. **Refining Lineage:** Swipe left or right through completed variations. Swipe up to access prompt details and perform quick upscaling or reprocessing tasks on the fly.
-4. **Delete and Clean:** Toggle **Select Multiple** (`btnToggleSelection` checklist icon) in the header to purge unwanted lineage branches recursively.
+```bash
+uv sync --dev
+uv run ruff check .
+uv run mypy
+uv run pytest
+```
+
+CI runs the same Ruff, strict mypy, and pytest checks on pushes and pull requests. A separate workflow builds and publishes multi-platform images to GitHub Container Registry.
+
+## Security
+
+ReImagineX has no authentication layer. Keep it bound to localhost or a trusted private network, especially when an OpenRouter key is configured. Do not expose the service directly to the public internet.
+
+Generated images and prompt content remain local unless they are sent to ComfyUI or, when enabled, OpenRouter for prompt expansion.
+
+## License
+
+[MIT](LICENSE)

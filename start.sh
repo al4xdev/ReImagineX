@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 # ReImagineX Startup Script
 # This script activates the virtual environment and starts the FastAPI server.
 
@@ -13,21 +14,11 @@ if [ ! -f .env ]; then
     echo "✔ .env file created. Please update it with your settings."
 fi
 
-# Activate the virtual environment
-if [ -d ".venv" ]; then
-    echo "✦ Activating virtual environment (.venv)..."
-    source .venv/bin/activate
-else
-    echo "✦ Virtual environment (.venv) not found. Setting up using 'uv'..."
-    if command -v uv &> /dev/null; then
-        uv sync
-        source .venv/bin/activate
-    else
-        echo "❌ Error: 'uv' is not installed. Please install 'uv' or create the virtual environment manually."
-        exit 1
-    fi
+if ! command -v uv &> /dev/null; then
+    echo "Error: uv is required. Install it from https://docs.astral.sh/uv/."
+    exit 1
 fi
 
 # Start the server
 echo "🚀 Starting ReImagineX server..."
-python src/server.py
+exec uv run python -m src.server

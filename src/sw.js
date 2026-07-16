@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reimaginex-cache-v1';
+const CACHE_NAME = 'reimaginex-cache-v2';
 const ASSETS = [
   '/',
   '/icon.svg',

@@ -1,38 +1,56 @@
-import os
-import json
 import asyncio
-from config import load_settings
+import json
+import os
+import tempfile
+from pathlib import Path
+from typing import Any
+
+from src.config import load_settings
+
+StateItem = dict[str, Any]
+State = list[StateItem]
 
 state_lock = asyncio.Lock()
 
-def get_db_file() -> str:
-    return os.path.join(load_settings().data_dir, "state.json")
+def get_db_file() -> Path:
+    return Path(load_settings().data_dir).expanduser() / "state.json"
 
-def _load() -> list:
+def _load() -> State:
     db_file = get_db_file()
     if os.path.exists(db_file):
-        with open(db_file, "r", encoding="utf-8") as f:
+        with db_file.open("r", encoding="utf-8") as f:
             try:
-                return json.load(f)
-            except:
+                value = json.load(f)
+                return value if isinstance(value, list) else []
+            except (OSError, json.JSONDecodeError):
                 return []
     return []
 
-def _save(state: list) -> None:
+def _save(state: State) -> None:
     db_file = get_db_file()
-    os.makedirs(os.path.dirname(db_file), exist_ok=True)
-    with open(db_file, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=2, ensure_ascii=False)
+    db_file.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(dir=db_file.parent, prefix=f".{db_file.name}.")
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(state, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.replace(db_file)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
 
-async def load_state() -> list:
+async def load_state() -> State:
     async with state_lock:
         return _load()
 
-async def save_state(state: list) -> None:
+async def save_state(state: State) -> None:
     async with state_lock:
         _save(state)
 
-def delete_item_reparent(item_id: str, state: list) -> tuple[list, list[str]]:
+def delete_item_reparent(item_id: str, state: State) -> tuple[State, list[str]]:
     """
     Deletes the item with item_id, and reparents all its immediate children
     to have their parent_id set to the deleted item's parent_id.
