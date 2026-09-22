@@ -1,44 +1,43 @@
-import asyncio
-import json
 import os
-import shutil
 import uuid
-from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Any, AsyncIterator, cast
-
+import copy
+import asyncio
 import httpx
 import uvicorn
 import websockets
-from fastapi import FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
+import json
+from contextlib import asynccontextmanager
+from typing import Optional
 from PIL import Image
 from pydantic import BaseModel, Field
+from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 # Modularized Imports
-from src.config import load_settings, save_settings
-from src.state_manager import State, _load, _save, delete_item_reparent, load_state, state_lock
-from src.workflow import build_generation_workflow
+from config import load_settings, save_settings
+from state_manager import load_state, save_state, state_lock, _load, _save, delete_item_reparent
+from workflow import build_generation_workflow, build_upscale_workflow
 
 # ── Configurations & Initial State ───────────────────────────────────────────
 startup_settings = load_settings()
-STARTUP_IMG_DIR = Path(startup_settings.data_dir).expanduser() / "imagens"
-STARTUP_THUMB_DIR = Path(startup_settings.data_dir).expanduser() / "thumbnails"
-STARTUP_IMG_DIR.mkdir(parents=True, exist_ok=True)
-STARTUP_THUMB_DIR.mkdir(parents=True, exist_ok=True)
+STARTUP_IMG_DIR = os.path.join(startup_settings.data_dir, "imagens")
+STARTUP_THUMB_DIR = os.path.join(startup_settings.data_dir, "thumbnails")
+os.makedirs(STARTUP_IMG_DIR, exist_ok=True)
+os.makedirs(STARTUP_THUMB_DIR, exist_ok=True)
 
-def save_image_with_thumbnail(filepath: str | Path, data: bytes) -> None:
-    image_path = Path(filepath)
-    image_path.parent.mkdir(parents=True, exist_ok=True)
-    image_path.write_bytes(data)
+def save_image_with_thumbnail(filepath: str, data: bytes) -> None:
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "wb") as f:
+        f.write(data)
     # Generate thumbnail (400px max, JPEG ~80% quality)
-    relative_path = image_path.relative_to(STARTUP_IMG_DIR)
-    thumb_path = (STARTUP_THUMB_DIR / relative_path).with_suffix(".jpg")
-    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+    thumb_path = filepath.replace(STARTUP_IMG_DIR, STARTUP_THUMB_DIR)
+    thumb_path = os.path.splitext(thumb_path)[0] + ".jpg"
+    os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
     try:
         from io import BytesIO
-        img: Image.Image = Image.open(BytesIO(data))
+        img = Image.open(BytesIO(data))
         img.thumbnail((400, 400))
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
@@ -47,16 +46,15 @@ def save_image_with_thumbnail(filepath: str | Path, data: bytes) -> None:
         print(f"Thumbnail error: {e}")
 
 # ── ComfyUI Integration ───────────────────────────────────────────────────────
-async def upload_to_comfy(filepath: str | Path, filename: str) -> str:
+async def upload_to_comfy(filepath: str, filename: str) -> str:
     settings = load_settings()
     # Use only the basename for ComfyUI upload to prevent path traversal issues on ComfyUI side
     upload_name = os.path.basename(filename)
     async with httpx.AsyncClient() as client:
-        with Path(filepath).open("rb") as f:
+        with open(filepath, "rb") as f:
             res = await client.post(f"{settings.comfy_url}/upload/image", files={"image": (upload_name, f, "image/png")})
             res.raise_for_status()
-            payload = cast(dict[str, Any], res.json())
-            return str(payload["name"])
+            return res.json()["name"]
 
 CLIENT_ID = str(uuid.uuid4())
 
@@ -69,7 +67,7 @@ def get_ws_url(comfy_url: str) -> str:
     else:
         return f"ws://{url}/ws?clientId={CLIENT_ID}"
 
-async def handle_node_executed(pid: str, images_list: list[dict[str, Any]]) -> None:
+async def handle_node_executed(pid: str, images_list: list[dict]) -> None:
     try:
         settings = load_settings()
         state = await load_state()
@@ -80,7 +78,7 @@ async def handle_node_executed(pid: str, images_list: list[dict[str, Any]]) -> N
         item = pending[0]
         img_data = images_list[0]
         local_fn = item["filename"]
-        local_path = STARTUP_IMG_DIR / local_fn
+        local_path = os.path.join(STARTUP_IMG_DIR, local_fn)
         url = f"{settings.comfy_url}/view?filename={img_data['filename']}&subfolder={img_data['subfolder']}&type={img_data['type']}"
 
         linked = False
@@ -88,16 +86,17 @@ async def handle_node_executed(pid: str, images_list: list[dict[str, Any]]) -> N
             comfy_output_file = os.path.join(settings.comfy_root, "output", img_data.get("subfolder", ""), img_data["filename"])
             if os.path.exists(comfy_output_file):
                 try:
-                    local_path.parent.mkdir(parents=True, exist_ok=True)
-                    if local_path.exists():
-                        local_path.unlink()
+                    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                    if os.path.exists(local_path):
+                        os.unlink(local_path)
                     os.link(comfy_output_file, local_path)
                     
                     # Generate thumbnail from local_path
-                    thumb_path = (STARTUP_THUMB_DIR / local_path.relative_to(STARTUP_IMG_DIR)).with_suffix(".jpg")
-                    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+                    thumb_path = local_path.replace(STARTUP_IMG_DIR, STARTUP_THUMB_DIR)
+                    thumb_path = os.path.splitext(thumb_path)[0] + ".jpg"
+                    os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
                     try:
-                        img: Image.Image = Image.open(local_path)
+                        img = Image.open(local_path)
                         img.thumbnail((400, 400))
                         if img.mode in ("RGBA", "P"):
                             img = img.convert("RGB")
@@ -140,7 +139,7 @@ async def handle_prompt_failure(pid: str) -> None:
             _save(current_state)
             print(f"Marked prompt {pid} as failed via WebSocket execution error.")
 
-active_progress: dict[str, float] = {}
+active_progress = {}
 
 async def websocket_listener() -> None:
     backoff = 1.0
@@ -179,11 +178,18 @@ async def websocket_listener() -> None:
                                     active_progress[pid] = 0.0
                     elif etype == "executed":
                         pid = data.get("prompt_id")
+                        node = data.get("node")
                         if pid:
                             active_progress.pop(pid, None)
                         output = data.get("output", {})
-                        if pid and "3" in output and "images" in output["3"]:
-                            asyncio.create_task(handle_node_executed(pid, output["3"]["images"]))
+                        images = output.get("images") if isinstance(output, dict) else None
+                        if not images and isinstance(output, dict):
+                            for k in ("461", "3"):
+                                if k in output and isinstance(output[k], dict) and "images" in output[k]:
+                                    images = output[k]["images"]
+                                    break
+                        if pid and images:
+                            asyncio.create_task(handle_node_executed(pid, images))
                     elif etype == "execution_error":
                         pid = data.get("prompt_id")
                         if pid:
@@ -194,7 +200,7 @@ async def websocket_listener() -> None:
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
 
-async def check_comfy_queue() -> None:
+async def check_comfy_queue():
     while True:
         try:
             settings = load_settings()
@@ -214,14 +220,22 @@ async def check_comfy_queue() -> None:
                     for item in pending:
                         pid = item["prompt_id"]
                         if pid in history:
-                            outputs = history[pid].get("outputs", {})
-                            if "3" in outputs and "images" in outputs["3"]:
-                                img_data = outputs["3"]["images"][0]
+                            img_data = None
+                            for nid in ("461", "3"):
+                                if nid in outputs and isinstance(outputs[nid], dict) and "images" in outputs[nid] and outputs[nid]["images"]:
+                                    img_data = outputs[nid]["images"][0]
+                                    break
+                            if not img_data:
+                                for nid, val in outputs.items():
+                                    if isinstance(val, dict) and "images" in val and val["images"]:
+                                        img_data = val["images"][0]
+                                        break
+                            if img_data:
                                 url = f"{settings.comfy_url}/view?filename={img_data['filename']}&subfolder={img_data['subfolder']}&type={img_data['type']}"
                                 
                                 # Resolve local path and create directory lineage structure
                                 local_fn = item["filename"]
-                                local_path = STARTUP_IMG_DIR / local_fn
+                                local_path = os.path.join(STARTUP_IMG_DIR, local_fn)
 
                                 # Try hard link fallback or fetch via network
                                 linked = False
@@ -229,15 +243,16 @@ async def check_comfy_queue() -> None:
                                     comfy_output_file = os.path.join(settings.comfy_root, "output", img_data.get("subfolder", ""), img_data["filename"])
                                     if os.path.exists(comfy_output_file):
                                         try:
-                                            local_path.parent.mkdir(parents=True, exist_ok=True)
-                                            if local_path.exists():
-                                                local_path.unlink()
+                                            os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                                            if os.path.exists(local_path):
+                                                os.unlink(local_path)
                                             os.link(comfy_output_file, local_path)
                                             # Generate thumbnail
-                                            thumb_path = (STARTUP_THUMB_DIR / local_path.relative_to(STARTUP_IMG_DIR)).with_suffix(".jpg")
-                                            thumb_path.parent.mkdir(parents=True, exist_ok=True)
+                                            thumb_path = local_path.replace(STARTUP_IMG_DIR, STARTUP_THUMB_DIR)
+                                            thumb_path = os.path.splitext(thumb_path)[0] + ".jpg"
+                                            os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
                                             try:
-                                                img: Image.Image = Image.open(local_path)
+                                                img = Image.open(local_path)
                                                 img.thumbnail((400, 400))
                                                 if img.mode in ("RGBA", "P"):
                                                     img = img.convert("RGB")
@@ -283,7 +298,7 @@ async def check_comfy_queue() -> None:
         await asyncio.sleep(1.5)
 
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI):
     task = asyncio.create_task(check_comfy_queue())
     ws_task = asyncio.create_task(websocket_listener())
     yield
@@ -295,15 +310,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         pass
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 @app.get("/api/state")
-async def get_state(limit: int = 20, offset: int = 0, root_id: str | None = None) -> State:
+async def get_state(limit: int = 20, offset: int = 0, root_id: str = None):
     state = await load_state()
     if root_id:
         # Return a specific item + all its descendants (lineage view)
-        def get_descendants(parent_id: str) -> State:
-            children: State = []
+        def get_descendants(parent_id):
+            children = []
             for item in state:
                 if item.get("parent_id") == parent_id:
                     children.append(item)
@@ -329,11 +345,11 @@ async def get_state(limit: int = 20, offset: int = 0, root_id: str | None = None
         return roots[offset : offset + limit]
 
 @app.post("/api/upload")
-async def handle_upload(file: UploadFile = File(...)) -> dict[str, Any]:
+async def handle_upload(file: UploadFile = File(...)):
     item_id = str(uuid.uuid4())
     # Initial upload root images are stored in gallery_data/imagens/root/
     filename = f"root/{item_id}.png"
-    filepath = STARTUP_IMG_DIR / filename
+    filepath = os.path.join(STARTUP_IMG_DIR, filename)
     save_image_with_thumbnail(filepath, await file.read())
     comfy_name = await upload_to_comfy(filepath, filename)
     new_item = {
@@ -345,9 +361,7 @@ async def handle_upload(file: UploadFile = File(...)) -> dict[str, Any]:
         "prompt_id": None,
         "prompt": "Initial Upload",
         "prompt_original": "Initial Upload",
-        "bypass_llm": False,
-        "force_consistency": False,
-        "upscale_input": False
+        "bypass_llm": False
     }
     async with state_lock:
         state = _load()
@@ -355,32 +369,95 @@ async def handle_upload(file: UploadFile = File(...)) -> dict[str, Any]:
         _save(state)
     return new_item
 
+@app.post("/api/upload-reference")
+async def handle_upload_reference(file: UploadFile = File(...)):
+    ref_id = str(uuid.uuid4())
+    ext = os.path.splitext(file.filename or "")[1] or ".png"
+    filename = f"references/ref_{ref_id}{ext}"
+    filepath = os.path.join(STARTUP_IMG_DIR, filename)
+    data = await file.read()
+    save_image_with_thumbnail(filepath, data)
+    comfy_name = await upload_to_comfy(filepath, filename)
+    return {
+        "id": ref_id,
+        "filename": filename,
+        "comfyName": comfy_name
+    }
+
 class PromptRequest(BaseModel):
     base_id: str
     prompt: str
-    upscale_input: bool = False
+    additional_images: list[str] = Field(default_factory=list)
+    custom_size: bool = True
+    aspect_ratio: str = "1:1 (Square)"
+    megapixels: float = 0.5
     bypass_llm: bool = False
-    force_consistency: bool = False
-    upscale_target_id: str | None = None
+    llm_provider: Optional[str] = None
 
-async def expand_prompt_openrouter(user_prompt: str) -> str:
+async def expand_prompt_deepseek(user_prompt: str) -> Optional[str]:
+    settings = load_settings()
+    if not settings.deepseek_api_key:
+        return None
+
+    model_name = settings.deepseek_model or "deepseek-flash"
+    # Auto-normalize model if passed as DeepSeek-V4.1-Flash or deepseek-v4-flash
+    if "flash" in model_name.lower() or "v4" in model_name.lower():
+        model_name = "deepseek-flash"
+
+    try:
+        print(f"Calling official DeepSeek API with model: {model_name}")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.post(
+                "https://api.deepseek.com/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {settings.deepseek_api_key.strip()}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model_name,
+                    "messages": [
+                        {"role": "system", "content": settings.system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    "temperature": 0.5,
+                    "reasoning_effort": "low",
+                }
+            )
+            if res.status_code == 200:
+                result = res.json()["choices"][0]["message"]["content"].strip()
+                if result.startswith("```"):
+                    lines = result.splitlines()
+                    if lines[0].startswith("```"):
+                        lines = lines[1:]
+                    if lines and lines[-1].startswith("```"):
+                        lines = lines[:-1]
+                    result = "\n".join(lines).strip()
+                print(f"Success with DeepSeek: {result}")
+                return result
+            else:
+                print(f"DeepSeek API error {res.status_code}: {res.text}")
+    except Exception as e:
+        print(f"Error calling DeepSeek API: {e}")
+    return None
+
+async def expand_prompt_openrouter(user_prompt: str) -> Optional[str]:
     settings = load_settings()
     if not settings.openrouter_api_key:
-        return user_prompt
+        return None
     fallback_models = settings.openrouter_models
     system_instruction = settings.system_prompt
     
-    async with httpx.AsyncClient(timeout=12.0) as client:
+    async with httpx.AsyncClient(timeout=20.0) as client:
         for model in fallback_models:
             try:
-                print(f"Trying to expand prompt with model: {model}")
+                print(f"Trying to expand prompt with OpenRouter model: {model}")
                 res = await client.post(
                     "https://openrouter.ai/api/v1/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {settings.openrouter_api_key}",
+                        "Authorization": f"Bearer {settings.openrouter_api_key.strip()}",
                         "Content-Type": "application/json",
                         "HTTP-Referer": "http://localhost:8888",
-                        "X-Title": "ReImagineX"
+                        "X-Title": "ComfyUI Gallery Proxy"
                     },
                     json={
                         "model": model,
@@ -393,38 +470,51 @@ async def expand_prompt_openrouter(user_prompt: str) -> str:
                 )
                 
                 if res.status_code == 200:
-                    payload = cast(dict[str, Any], res.json())
-                    optimized_prompt = str(payload["choices"][0]["message"]["content"]).strip()
-                    print(f"Success with model [{model}]: {optimized_prompt}")
+                    optimized_prompt = res.json()["choices"][0]["message"]["content"].strip()
+                    print(f"Success with OpenRouter [{model}]: {optimized_prompt}")
                     return optimized_prompt
                 else:
-                    print(f"Model [{model}] failed with status {res.status_code}. Trying next...")
+                    print(f"OpenRouter model [{model}] failed with status {res.status_code}. Trying next...")
             except Exception as e:
-                print(f"Error connecting with model [{model}]: {e}. Trying next...")
-                
-    print("All OpenRouter models failed. Using original user prompt.")
+                print(f"Error connecting with OpenRouter model [{model}]: {e}. Trying next...")
+    return None
+
+async def expand_prompt(user_prompt: str, preferred_provider: Optional[str] = None) -> str:
+    settings = load_settings()
+    provider = preferred_provider or settings.llm_provider or "deepseek"
+
+    if provider == "deepseek":
+        res = await expand_prompt_deepseek(user_prompt)
+        if res:
+            return res
+        print("DeepSeek failed. Trying OpenRouter fallback...")
+        res = await expand_prompt_openrouter(user_prompt)
+        if res:
+            return res
+    else:
+        res = await expand_prompt_openrouter(user_prompt)
+        if res:
+            return res
+        print("OpenRouter failed. Trying DeepSeek fallback...")
+        res = await expand_prompt_deepseek(user_prompt)
+        if res:
+            return res
+
+    print("All configured LLM providers failed. Using original user prompt.")
     return user_prompt
 
 @app.post("/api/generate")
-async def generate(req: PromptRequest) -> dict[str, Any]:
+async def generate(req: PromptRequest):
     settings = load_settings()
     state = await load_state()
-    base_item: dict[str, Any] | None
     
-    if req.upscale_target_id:
-        target_item = next((i for i in state if i["id"] == req.upscale_target_id), None)
-        if not target_item or not target_item.get("comfyName"):
-            raise HTTPException(status_code=400, detail="Invalid upscale target image.")
-        base_item = target_item
-    else:
-        base_item = next((i for i in state if i["id"] == req.base_id), None)
-        if not base_item or not base_item.get("comfyName"):
-            raise HTTPException(status_code=400, detail="Invalid base image.")
-    assert base_item is not None
+    base_item = next((i for i in state if i["id"] == req.base_id), None)
+    if not base_item or not base_item.get("comfyName"):
+        raise HTTPException(status_code=400, detail="Invalid base image.")
         
     # Re-upload the base image to ComfyUI to guarantee it exists in ComfyUI's input directory
-    local_path = STARTUP_IMG_DIR / base_item["filename"]
-    if local_path.exists():
+    local_path = os.path.join(STARTUP_IMG_DIR, base_item["filename"])
+    if os.path.exists(local_path):
         try:
             comfy_name = await upload_to_comfy(local_path, base_item["filename"])
             base_item["comfyName"] = comfy_name
@@ -435,82 +525,140 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
     if req.bypass_llm:
         prompt_final = req.prompt
     else:
-        prompt_final = await expand_prompt_openrouter(req.prompt)
-
-    # ── Consistency Formatting (Force identical image) ──────────────────────
-    if req.force_consistency:
-        prompt_final = f"Keep everything identical, only modify: {prompt_final}"
+        prompt_final = await expand_prompt(req.prompt, req.llm_provider)
 
     # ── ComfyUI Workflow Generation ───────────────────────────────────────────
     wf = build_generation_workflow(
         prompt=prompt_final,
         base_image_comfy_name=base_item["comfyName"],
         seed=int.from_bytes(os.urandom(4), byteorder="little"),
-        upscale_input=req.upscale_input,
+        additional_images=req.additional_images,
+        custom_size=req.custom_size,
+        aspect_ratio=req.aspect_ratio,
+        megapixels=req.megapixels,
         diffusion_model_name=settings.diffusion_model_name,
         clip_model_name=settings.clip_model_name,
-        vae_model_name=settings.vae_model_name,
-        upscale_model_name=settings.upscale_model_name,
-        input_upscale_model_name=settings.input_upscale_model_name
+        vae_model_name=settings.vae_model_name
     )
 
     async with httpx.AsyncClient() as client:
-        res = await client.post(f"{settings.comfy_url}/prompt", json={"prompt": wf})
+        res = await client.post(f"{settings.comfy_url}/prompt", json={"prompt": wf, "client_id": CLIENT_ID})
         if res.status_code != 200:
             raise HTTPException(status_code=500, detail="Error sending request to ComfyUI")
         prompt_id = res.json()["prompt_id"]
         
-    if req.upscale_target_id:
-        async with state_lock:
-            current_state = _load()
-            for entry in current_state:
-                if entry["id"] == req.upscale_target_id:
-                    entry["status"] = "pending"
-                    entry["prompt_id"] = prompt_id
-                    entry["upscale_input"] = True
-                    if prompt_final:
-                        entry["prompt"] = prompt_final
-                    break
-            _save(current_state)
-            
-            updated_item = next((i for i in current_state if i["id"] == req.upscale_target_id), None)
-            if updated_item is None:
-                raise HTTPException(status_code=404, detail="Upscale target disappeared.")
-            return updated_item
-    else:
-        new_id = str(uuid.uuid4())
-        filename = f"{req.base_id}/{new_id}.png"
-        
-        new_item = {
-            "id": new_id,
-            "parent_id": req.base_id,
-            "status": "pending",
-            "filename": filename,
-            "comfyName": None,
-            "prompt_id": prompt_id,
-            "prompt": prompt_final,
-            "prompt_original": req.prompt,
-            "bypass_llm": req.bypass_llm,
-            "force_consistency": req.force_consistency,
-            "upscale_input": req.upscale_input
-        }
-                    
-        async with state_lock:
-            state = _load()
-            state.insert(0, new_item)
-            _save(state)
-        return new_item
+    new_id = str(uuid.uuid4())
+    filename = f"{req.base_id}/{new_id}.png"
+    
+    new_item = {
+        "id": new_id,
+        "parent_id": req.base_id,
+        "status": "pending",
+        "filename": filename,
+        "comfyName": None,
+        "prompt_id": prompt_id,
+        "prompt": prompt_final,
+        "prompt_original": req.prompt,
+        "bypass_llm": req.bypass_llm,
+        "additional_images": req.additional_images,
+        "custom_size": req.custom_size,
+        "aspect_ratio": req.aspect_ratio,
+        "megapixels": req.megapixels
+    }
+                
+    async with state_lock:
+        state = _load()
+        state.insert(0, new_item)
+        _save(state)
+    return new_item
+
+# ── Qwen 2.1 Prompt-Based 2MP Upscaler ────────────────────────────────────────
+class UpscaleRequest(BaseModel):
+    item_id: str
+
+@app.post("/api/upscale")
+async def upscale_image(req: UpscaleRequest):
+    settings = load_settings()
+    state = await load_state()
+
+    base_item = next((i for i in state if i["id"] == req.item_id), None)
+    if not base_item:
+        raise HTTPException(status_code=404, detail="Image item not found.")
+
+    if base_item.get("upscaled") or (base_item.get("megapixels") and float(base_item.get("megapixels", 0)) >= 2.0):
+        raise HTTPException(status_code=400, detail="This image is already at maximum resolution (2MP).")
+
+    local_path = os.path.join(STARTUP_IMG_DIR, base_item["filename"])
+    if not os.path.exists(local_path):
+        raise HTTPException(status_code=400, detail="Image file not found on disk.")
+
+    # Re-upload base image to ComfyUI to ensure it exists in input directory
+    try:
+        comfy_name = await upload_to_comfy(local_path, base_item["filename"])
+        base_item["comfyName"] = comfy_name
+    except Exception as e:
+        print(f"Failed to auto-upload base image to ComfyUI for upscale: {e}")
+        if not base_item.get("comfyName"):
+            raise HTTPException(status_code=500, detail="Failed to upload base image to ComfyUI.")
+
+    # Read original image dimensions to scale to 2MP
+    try:
+        with Image.open(local_path) as img:
+            orig_w, orig_h = img.size
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read image dimensions: {e}")
+
+    seed = int.from_bytes(os.urandom(4), byteorder="little")
+    wf = build_upscale_workflow(
+        base_image_comfy_name=base_item["comfyName"],
+        original_width=orig_w,
+        original_height=orig_h,
+        seed=seed,
+        mp=2.0,
+        diffusion_model_name=settings.diffusion_model_name,
+        clip_model_name=settings.clip_model_name,
+        vae_model_name=settings.vae_model_name,
+    )
+
+    async with httpx.AsyncClient() as client:
+        res = await client.post(f"{settings.comfy_url}/prompt", json={"prompt": wf, "client_id": CLIENT_ID})
+        if res.status_code != 200:
+            raise HTTPException(status_code=500, detail="Error sending request to ComfyUI")
+        prompt_id = res.json()["prompt_id"]
+
+    new_id = str(uuid.uuid4())
+    filename = f"{req.item_id}/{new_id}.png"
+
+    new_item = {
+        "id": new_id,
+        "parent_id": req.item_id,
+        "status": "pending",
+        "filename": filename,
+        "comfyName": None,
+        "prompt_id": prompt_id,
+        "prompt": "Keep the image visually the same. Preserve the subject’s identity, facial features, hairstyle, body proportions, pose, clothing, background, framing, and lighting. Only reduce noise, clean artifacts, refine textures, and improve sharpness and detail for a cleaner high-resolution result.",
+        "prompt_original": "Upscale (2MP)",
+        "bypass_llm": True,
+        "upscaled": True,
+        "megapixels": 2.0
+    }
+
+    async with state_lock:
+        current_state = _load()
+        current_state.insert(0, new_item)
+        _save(current_state)
+    return new_item
 
 # ── Bulk Delete (Cascade Deletion with ComfyUI Cancellation) ──────────────────
 class DeleteRequest(BaseModel):
     ids: list[str]
 
 @app.post("/api/items/delete")
-async def delete_items(req: DeleteRequest) -> dict[str, Any]:
+async def delete_items(req: DeleteRequest):
     settings = load_settings()
     async with state_lock:
         state = _load()
-        all_removed_ids: list[str] = []
+        all_removed_ids = []
         current_state = state
         
         for item_id in req.ids:
@@ -535,19 +683,20 @@ async def delete_items(req: DeleteRequest) -> dict[str, Any]:
                 
                 # 2. Remove the corresponding image file
                 if item.get("filename"):
-                    file_path = STARTUP_IMG_DIR / item["filename"]
-                    if file_path.exists():
+                    file_path = os.path.join(STARTUP_IMG_DIR, item["filename"])
+                    if os.path.exists(file_path):
                         try:
-                            file_path.unlink()
-                        except OSError:
+                            os.remove(file_path)
+                        except:
                             pass
             
             # 3. Remove the directory of descendants associated with this item ID
-            dir_path = STARTUP_IMG_DIR / r_id
-            if dir_path.exists():
+            dir_path = os.path.join(STARTUP_IMG_DIR, r_id)
+            if os.path.exists(dir_path):
+                import shutil
                 try:
                     shutil.rmtree(dir_path, ignore_errors=True)
-                except OSError:
+                except:
                     pass
                 
     return {"status": "ok", "deleted_count": len(all_removed_ids)}
@@ -555,83 +704,78 @@ async def delete_items(req: DeleteRequest) -> dict[str, Any]:
 # ── Dynamic Settings ──────────────────────────────────────────────────────────
 class ConfigSchema(BaseModel):
     system_prompt: str
-    openrouter_models: list[str] = Field(min_length=1)
+    llm_provider: str = "deepseek"
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-flash"
+    openrouter_api_key: str = ""
+    openrouter_models: list[str] = []
     diffusion_model_name: str
     clip_model_name: str
     vae_model_name: str
-    upscale_model_name: str
-    input_upscale_model_name: str
     comfy_url: str
-    openrouter_api_key: str | None = None
-    clear_openrouter_api_key: bool = False
-    comfy_root: str | None = None
+    comfy_root: Optional[str] = None
 
 @app.get("/api/config")
-async def get_config() -> dict[str, Any]:
+async def get_config():
     settings = load_settings()
     return {
         "system_prompt": settings.system_prompt,
+        "llm_provider": settings.llm_provider,
+        "deepseek_api_key": settings.deepseek_api_key,
+        "deepseek_model": settings.deepseek_model,
+        "openrouter_api_key": settings.openrouter_api_key,
         "openrouter_models": settings.openrouter_models,
         "diffusion_model_name": settings.diffusion_model_name,
         "clip_model_name": settings.clip_model_name,
         "vae_model_name": settings.vae_model_name,
-        "upscale_model_name": settings.upscale_model_name,
-        "input_upscale_model_name": settings.input_upscale_model_name,
         "comfy_url": settings.comfy_url,
-        "openrouter_configured": bool(settings.openrouter_api_key),
         "comfy_root": settings.comfy_root
     }
 
 @app.post("/api/config")
-async def update_config(cfg: ConfigSchema) -> dict[str, str]:
+async def update_config(cfg: ConfigSchema):
     settings = load_settings()
     settings.system_prompt = cfg.system_prompt
+    settings.llm_provider = cfg.llm_provider
+    settings.deepseek_api_key = cfg.deepseek_api_key
+    settings.deepseek_model = cfg.deepseek_model
+    settings.openrouter_api_key = cfg.openrouter_api_key
     settings.openrouter_models = cfg.openrouter_models
     settings.diffusion_model_name = cfg.diffusion_model_name
     settings.clip_model_name = cfg.clip_model_name
     settings.vae_model_name = cfg.vae_model_name
-    settings.upscale_model_name = cfg.upscale_model_name
-    settings.input_upscale_model_name = cfg.input_upscale_model_name
     settings.comfy_url = cfg.comfy_url
-    if cfg.clear_openrouter_api_key:
-        settings.openrouter_api_key = ""
-    elif cfg.openrouter_api_key:
-        settings.openrouter_api_key = cfg.openrouter_api_key
     settings.comfy_root = cfg.comfy_root or ""
     save_settings(settings)
     return {"status": "ok"}
 
 @app.get("/api/comfy/models")
-async def get_comfy_models() -> dict[str, list[str]]:
+async def get_comfy_models():
     settings = load_settings()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             res = await client.get(f"{settings.comfy_url}/object_info")
             res.raise_for_status()
-            info = cast(dict[str, Any], res.json())
+            info = res.json()
 
-        def extract_options(node_name: str, field_name: str) -> list[str]:
+        def extract_options(node_name, field_name):
             node = info.get(node_name, {})
-            if not isinstance(node, dict):
-                return []
             field = node.get("input", {}).get("required", {}).get(field_name)
             if not field or not isinstance(field, list) or len(field) == 0:
                 return []
             # Format: [["opt1", "opt2", ...]] — simple list in first element
             if isinstance(field[0], list):
-                return [str(option) for option in field[0]]
+                return field[0]
             # Format: ["COMBO", {"options": [...]}] — COMBO type with options dict
             if len(field) > 1 and isinstance(field[1], dict) and "options" in field[1]:
-                options = field[1]["options"]
-                return [str(option) for option in options] if isinstance(options, list) else []
+                return field[1]["options"]
             return []
 
         return {
-            "diffusion_models": extract_options("DiffusionModelLoaderKJ", "model_name"),
+            "diffusion_models": extract_options("UNETLoader", "unet_name") or extract_options("DiffusionModelLoaderKJ", "model_name"),
             "clip_models": extract_options("CLIPLoader", "clip_name"),
             "clip_types": extract_options("CLIPLoader", "type"),
             "vae_models": extract_options("VAELoader", "vae_name"),
-            "upscale_models": extract_options("UpscaleModelLoader", "model_name"),
         }
     except Exception as e:
         print(f"Error fetching ComfyUI models: {e}")
@@ -640,11 +784,10 @@ async def get_comfy_models() -> dict[str, list[str]]:
             "clip_models": [],
             "clip_types": [],
             "vae_models": [],
-            "upscale_models": [],
         }
 
 @app.get("/api/comfy-status")
-async def get_comfy_status() -> dict[str, str]:
+async def get_comfy_status():
     settings = load_settings()
     try:
         async with httpx.AsyncClient(timeout=1.0) as client:
@@ -658,29 +801,21 @@ async def get_comfy_status() -> dict[str, str]:
 app.mount("/images", StaticFiles(directory=STARTUP_IMG_DIR), name="images")
 
 # ── Thumbnail serving (lazy generation) ──────────────────────────────────────
-def _safe_child(root: Path, relative: str) -> Path:
-    candidate = (root / relative).resolve()
-    root_resolved = root.resolve()
-    if not candidate.is_relative_to(root_resolved):
-        raise HTTPException(status_code=404, detail="Image not found")
-    return candidate
-
-
 @app.get("/thumbnails/{path:path}")
-async def serve_thumbnail(path: str) -> FileResponse:
+async def serve_thumbnail(path: str):
     # Map thumbnail path to image path (thumb: .jpg → image: .png)
-    thumb_path = _safe_child(STARTUP_THUMB_DIR, path)
-    if thumb_path.exists():
+    thumb_path = os.path.join(STARTUP_THUMB_DIR, path)
+    if os.path.exists(thumb_path):
         return FileResponse(thumb_path)
 
     # Generate on demand from full image
-    img_path = _safe_child(STARTUP_IMG_DIR, str(Path(path).with_suffix(".png")))
-    if not img_path.exists():
+    img_path = os.path.join(STARTUP_IMG_DIR, os.path.splitext(path)[0] + ".png")
+    if not os.path.exists(img_path):
         raise HTTPException(status_code=404, detail="Image not found")
 
-    thumb_path.parent.mkdir(parents=True, exist_ok=True)
+    os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
     try:
-        img: Image.Image = Image.open(img_path)
+        img = Image.open(img_path)
         img.thumbnail((400, 400))
         if img.mode in ("RGBA", "P"):
             img = img.convert("RGB")
@@ -692,39 +827,34 @@ async def serve_thumbnail(path: str) -> FileResponse:
 
 # ── Dynamic Frontend HTML Loading ─────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
-def serve_frontend() -> HTMLResponse:
-    frontend_path = Path(__file__).with_name("frontend.html")
-    if frontend_path.exists():
-        with frontend_path.open("r", encoding="utf-8") as f:
+def serve_frontend():
+    frontend_path = os.path.join(os.path.dirname(__file__), "frontend.html")
+    if os.path.exists(frontend_path):
+        with open(frontend_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     else:
         raise HTTPException(status_code=404, detail="frontend.html not found.")
 
 @app.get("/manifest.json")
-async def get_manifest() -> FileResponse:
-    manifest_path = Path(__file__).with_name("manifest.json")
-    if manifest_path.exists():
+async def get_manifest():
+    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+    if os.path.exists(manifest_path):
         return FileResponse(manifest_path, media_type="application/json")
     raise HTTPException(status_code=404, detail="manifest.json not found")
 
 @app.get("/sw.js")
-async def get_sw() -> FileResponse:
-    sw_path = Path(__file__).with_name("sw.js")
-    if sw_path.exists():
+async def get_sw():
+    sw_path = os.path.join(os.path.dirname(__file__), "sw.js")
+    if os.path.exists(sw_path):
         return FileResponse(sw_path, media_type="application/javascript")
     raise HTTPException(status_code=404, detail="sw.js not found")
 
 @app.get("/icon.svg")
-async def get_icon() -> FileResponse:
-    icon_path = Path(__file__).with_name("icon.svg")
-    if icon_path.exists():
+async def get_icon():
+    icon_path = os.path.join(os.path.dirname(__file__), "icon.svg")
+    if os.path.exists(icon_path):
         return FileResponse(icon_path, media_type="image/svg+xml")
     raise HTTPException(status_code=404, detail="icon.svg not found")
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "src.server:app",
-        host=os.getenv("REIMAGINEX_HOST", "127.0.0.1"),
-        port=int(os.getenv("REIMAGINEX_PORT", "8888")),
-        reload=False,
-    )
+    uvicorn.run("server:app", host="0.0.0.0", port=8888, reload=False)

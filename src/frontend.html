@@ -193,7 +193,7 @@
   }
 
 
-  /* ── Gallery cards (Proporção 2:3 Vertical) ────────────────────── */
+  /* ── Gallery cards (2:3 Vertical Aspect Ratio) ────────────────── */
   .gallery-card {
     background: #111;
     border-radius: 12px;
@@ -237,6 +237,19 @@
   }
   #viewFullPrompt:hover, #viewOriginalPrompt:hover {
     opacity: 0.75;
+  }
+
+  /* ── Reference thumbnail card styling ── */
+  .ref-thumb-card {
+    cursor: pointer;
+    transition: transform 0.12s ease, filter 0.12s ease;
+    user-select: none;
+  }
+  .ref-thumb-card:hover {
+    filter: brightness(1.15);
+  }
+  .ref-thumb-card:active {
+    transform: scale(0.93);
   }
 
   /* ── Toast notification ─────────────────────────────────────────── */
@@ -442,17 +455,6 @@
 
     <!-- Actions Row -->
     <div style="display: flex; gap: 10px; width: 100%;">
-      <!-- Upscale Button -->
-      <button id="btnUpscaleCurrent" onclick="upscaleCurrent()" 
-        style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: linear-gradient(135deg, #4f46e5, #6366f1); color: #fff; border: none; border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);"
-        onmouseover="this.style.opacity='0.9'"
-        onmouseout="this.style.opacity='1'">
-        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="stroke-width: 2.5px;">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
-        </svg>
-        <span>Upscale (4x)</span>
-      </button>
-
       <!-- Reprocess Button -->
       <button id="btnReprocessCurrent" onclick="reprocessCurrent()" 
         style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: rgba(31, 41, 55, 0.9); border: 1px solid rgba(75, 85, 99, 0.4); color: #e5e7eb; border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease;"
@@ -463,18 +465,38 @@
         </svg>
         <span>Reprocess Prompt</span>
       </button>
+
+      <!-- Upscale Button -->
+      <button id="btnUpscaleCurrent" onclick="upscaleCurrent()" 
+        style="flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; background: rgba(37, 99, 235, 0.85); border: 1px solid rgba(59, 130, 246, 0.5); color: #fff; border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s ease;"
+        onmouseover="this.style.background='rgba(37, 99, 235, 1)'"
+        onmouseout="this.style.background='rgba(37, 99, 235, 0.85)'">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="17 11 21 7 17 3"></polyline>
+          <polyline points="21 7 12 7 12 16"></polyline>
+          <polyline points="7 13 3 17 7 21"></polyline>
+          <polyline points="3 17 12 17"></polyline>
+        </svg>
+        <span>Upscale (2MP)</span>
+      </button>
     </div>
 
     <!-- Prompt details wrapper -->
     <div id="promptDetails" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.08); padding: 12px; border-radius: 8px; display: flex; flex-direction: column; gap: 8px;">
       <div id="badgeContainer" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 2px;"></div>
       <div id="originalPromptWrapper" style="display:none;">
-        <p style="font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Original Prompt</p>
-        <p id="viewOriginalPrompt" style="font-size:12px;color:rgba(255,255,255,0.7);user-select:text;" title="Click to copy"></p>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+          <p style="font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Original Prompt</p>
+          <span style="font-size:10px;color:#60a5fa;cursor:pointer;opacity:0.8;">Click to copy full</span>
+        </div>
+        <p id="viewOriginalPrompt" style="font-size:12px;color:rgba(255,255,255,0.7);user-select:text;word-break:break-word;line-height:1.4;" title="Click to copy full original prompt"></p>
       </div>
       <div>
-        <p id="txtPromptFinalTitle" style="font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Final Prompt (LLM)</p>
-        <p id="viewFullPrompt" style="font-size:12px;color:rgba(255,255,255,0.95);user-select:text;" title="Click to copy"></p>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;">
+          <p id="txtPromptFinalTitle" style="font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Final Prompt (LLM)</p>
+          <span style="font-size:10px;color:#60a5fa;cursor:pointer;opacity:0.8;">Click to copy full</span>
+        </div>
+        <p id="viewFullPrompt" style="font-size:12px;color:rgba(255,255,255,0.95);user-select:text;word-break:break-word;line-height:1.4;" title="Click to copy full prompt"></p>
       </div>
     </div>
   </div>
@@ -482,53 +504,92 @@
 
 <!-- ── MODAL 2: PROMPT / VARIATION ────────────────────────────────────────── -->
 <div id="promptModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.9);z-index:10000;align-items:center;justify-content:center;padding:8px;backdrop-filter:blur(4px);">
-  <div style="background:#111827;border:1px solid #1f2937;border-radius:16px;width:100%;max-width:900px;display:flex;flex-direction:column;overflow:hidden;max-height:95dvh;position:relative;">
+  <div style="background:#111827;border:1px solid #1f2937;border-radius:16px;width:100%;max-width:900px;display:flex;flex-direction:column;overflow-y:auto;max-height:92dvh;position:relative;" class="no-scrollbar">
     <button id="btnClosePrompt"
-      style="position:absolute;top:12px;right:12px;background:#1f2937;color:#fff;border:none;border-radius:50%;width:36px;height:36px;font-weight:bold;font-size:15px;cursor:pointer;z-index:10;display:flex;align-items:center;justify-content:center;">
+      style="position:sticky;top:12px;align-self:flex-end;margin-right:12px;margin-bottom:-36px;background:rgba(31,41,55,0.85);color:#fff;border:1px solid rgba(255,255,255,0.1);border-radius:50%;width:36px;height:36px;font-weight:bold;font-size:15px;cursor:pointer;z-index:20;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px);">
       ✕
     </button>
 
     <!-- Base reference image preview -->
-    <div style="background:#000;display:flex;align-items:center;justify-content:center;padding:12px;height:35vh;border-bottom:1px solid #1f2937;">
-      <img id="promptRefImage" src="" alt="Base reference" style="max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;">
+    <div style="background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:12px;min-height:180px;max-height:48vh;border-bottom:1px solid #1f2937;position:relative;flex-shrink:0;">
+      <span style="position:absolute;top:10px;left:10px;background:rgba(37,99,235,0.85);color:#fff;font-size:11px;font-weight:700;padding:4px 8px;border-radius:6px;backdrop-filter:blur(4px);z-index:2;cursor:pointer;" title="Click to copy <image1>" onclick="copyTextToClipboard('<image1>', 'Copied <image1> to clipboard!')">
+        Target Edit: &lt;image1&gt;
+      </span>
+      <img id="promptRefImage" src="" alt="Base reference" style="max-width:100%;max-height:45vh;object-fit:contain;border-radius:8px;">
     </div>
 
     <!-- Inputs -->
-    <div style="padding:20px;display:flex;flex-direction:column;gap:14px;overflow-y:auto;" class="no-scrollbar">
+    <div style="padding:20px;display:flex;flex-direction:column;gap:14px;">
       <div>
-        <h2 style="font-size:18px;font-weight:700;color:#fff;">New Variation</h2>
-        <p style="font-size:11px;color:#6b7280;margin-top:2px;">This image will serve as the base for the new variation.</p>
+        <h2 style="font-size:18px;font-weight:700;color:#fff;">New Variation (Qwen 2.1 Edit)</h2>
+        <p style="font-size:11px;color:#6b7280;margin-top:2px;">Reference the target as &lt;image1&gt; and extra references as &lt;image2&gt;..&lt;image10&gt;.</p>
       </div>
+
+      <!-- Reference Images Manager -->
+      <div style="background: rgba(17, 24, 39, 0.7); border: 1px solid #374151; border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <label style="font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.05em;">
+            Reference Images (<span id="refImagesCount">1</span> / 10)
+          </label>
+          <button type="button" id="btnAddRefImage" onclick="document.getElementById('refImageFileInput').click()"
+            style="background: #374151; color: #fff; border: 1px solid #4b5563; border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+            <span>+ Add Image</span>
+          </button>
+          <input type="file" id="refImageFileInput" accept="image/*" style="display:none;" onchange="handleRefImageSelected(event)">
+        </div>
+        <!-- Thumbnails row -->
+        <div id="refImagesList" style="display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px;" class="no-scrollbar">
+        </div>
+      </div>
+
       <div>
         <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">Prompt</label>
         <textarea id="promptText" rows="3"
           style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:10px;padding:10px 12px;color:#fff;font-size:14px;resize:none;outline:none;font-family:inherit;"
-          placeholder="Describe the modifications you want to make..."></textarea>
+          placeholder="e.g. Keep the character and pose in <image1>, put this light blue denim shirt from <image2> on the character..."></textarea>
       </div>
       
       <!-- Toggles and Advanced options -->
       <div class="flex flex-col gap-3 bg-gray-900/50 p-3 rounded-xl border border-gray-800/80">
-        <!-- Input Upscale -->
+        <!-- Generation Resolution (Custom Size / Aspect Ratio) -->
         <div style="display:flex;align-items:center;gap:8px;">
-          <input type="checkbox" id="upscaleInputCheckbox" style="width:18px;height:18px;accent-color:#2563eb;cursor:pointer;">
-          <label for="upscaleInputCheckbox" style="font-size:13px;color:#d1d5db;cursor:pointer;user-select:none;">
-            Input Upscale (enable if the base reference image has low quality)
+          <input type="checkbox" id="customSizeCheckbox" onchange="toggleCustomSizeOptions()" style="width:18px;height:18px;accent-color:#2563eb;cursor:pointer;" checked>
+          <label for="customSizeCheckbox" style="font-size:13px;color:#d1d5db;cursor:pointer;user-select:none;">
+            Generation Resolution (Custom Size / Aspect Ratio)
           </label>
+        </div>
+
+        <!-- Custom Size Options Container (Default expanded) -->
+        <div id="customSizeContainer" style="display:flex;flex-direction:column;gap:10px;padding:10px;background:rgba(0,0,0,0.3);border-radius:8px;border:1px solid rgba(255,255,255,0.06);">
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <label style="font-size:11px;color:#9ca3af;font-weight:600;">Aspect Ratio</label>
+            <select id="aspectRatioSelect" style="background:#1f2937;color:#fff;border:1px solid #374151;border-radius:6px;padding:6px 10px;font-size:13px;outline:none;">
+              <option value="1:1 (Square)" selected>1:1 (Square)</option>
+              <option value="9:16 (Portrait Widescreen)">9:16 (Portrait Widescreen)</option>
+              <option value="16:9 (Widescreen)">16:9 (Widescreen)</option>
+              <option value="3:4 (Portrait Standard)">3:4 (Portrait Standard)</option>
+              <option value="4:3 (Standard)">4:3 (Standard)</option>
+              <option value="2:3 (Portrait Photo)">2:3 (Portrait Photo)</option>
+              <option value="3:2 (Photo)">3:2 (Photo)</option>
+              <option value="21:9 (Ultrawide)">21:9 (Ultrawide)</option>
+            </select>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <label style="font-size:11px;color:#9ca3af;font-weight:600;">Target Resolution (Megapixels)</label>
+              <span id="megapixelsVal" style="font-size:12px;font-weight:700;color:#60a5fa;">0.5 MP</span>
+            </div>
+            <input type="range" id="megapixelsSlider" min="0.2" max="1.0" step="0.1" value="0.5"
+              oninput="document.getElementById('megapixelsVal').textContent = parseFloat(this.value).toFixed(1) + ' MP'"
+              style="width:100%;accent-color:#2563eb;cursor:pointer;">
+          </div>
         </div>
 
         <!-- Bypass LLM -->
         <div style="display:flex;align-items:center;gap:8px;">
           <input type="checkbox" id="bypassLlmCheckbox" style="width:18px;height:18px;accent-color:#2563eb;cursor:pointer;">
           <label for="bypassLlmCheckbox" style="font-size:13px;color:#d1d5db;cursor:pointer;user-select:none;">
-            Bypass LLM refinement (send original raw prompt directly)
-          </label>
-        </div>
-
-        <!-- Force consistency -->
-        <div style="display:flex;align-items:center;gap:8px;">
-          <input type="checkbox" id="forceConsistencyCheckbox" style="width:18px;height:18px;accent-color:#2563eb;cursor:pointer;" checked>
-          <label for="forceConsistencyCheckbox" style="font-size:13px;color:#d1d5db;cursor:pointer;user-select:none;">
-            Force consistency ("Keep everything identical, only modify...")
+            Bypass LLM refinement (send prompt directly)
           </label>
         </div>
       </div>
@@ -566,15 +627,27 @@
       </div>
 
       <div>
-        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">OpenRouter API Key</label>
-        <input type="password" id="cfgApiKey" autocomplete="new-password" placeholder="Leave blank to keep the saved key" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:6px;">
-          <span id="cfgApiKeyStatus" style="font-size:11px;color:#6b7280;">Not configured</span>
-          <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#9ca3af;cursor:pointer;">
-            <input type="checkbox" id="cfgClearApiKey">
-            Clear saved key
-          </label>
+        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Default LLM Provider</label>
+        <select id="cfgLlmProvider" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
+          <option value="deepseek">DeepSeek (Official API)</option>
+          <option value="openrouter">OpenRouter</option>
+        </select>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">DeepSeek API Key</label>
+          <input type="password" id="cfgDeepSeekApiKey" placeholder="sk-..." style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
         </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">DeepSeek Model</label>
+          <input type="text" id="cfgDeepSeekModel" placeholder="deepseek-flash" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
+        </div>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">OpenRouter API Key</label>
+        <input type="password" id="cfgApiKey" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
       </div>
 
       <div>
@@ -599,14 +672,6 @@
         <div>
           <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">VAE</label>
           <select id="cfgVaeModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
-        </div>
-        <div>
-          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Upscale Model</label>
-          <select id="cfgUpscaleModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
-        </div>
-        <div>
-          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Input Upscale</label>
-          <select id="cfgInputUpscaleModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
         </div>
       </div>
 
@@ -771,13 +836,19 @@ function copyTextToClipboard(text, successMessage) {
   }
 }
 
+function truncatePrompt(text, maxLength = 160) {
+  if (!text) return '';
+  if (text.length <= maxLength) return text;
+  return text.slice(0, maxLength).trimEnd() + '...';
+}
+
 // Copy prompts to clipboard
 viewPrompt.addEventListener('click', () => {
-  copyTextToClipboard(viewPrompt.textContent, 'Prompt copied to clipboard!');
+  copyTextToClipboard(viewPrompt.dataset.fullPrompt || viewPrompt.textContent, 'Prompt copied to clipboard!');
 });
 
 viewOriginalPrompt.addEventListener('click', () => {
-  copyTextToClipboard(viewOriginalPrompt.textContent, 'Original prompt copied to clipboard!');
+  copyTextToClipboard(viewOriginalPrompt.dataset.fullPrompt || viewOriginalPrompt.textContent, 'Original prompt copied to clipboard!');
 });
 
 function showToast(message) {
@@ -918,11 +989,12 @@ async function loadFirstPage() {
           localItem.comfyName = item.comfyName;
           localItem.prompt = item.prompt;
           localItem.prompt_original = item.prompt_original;
-          localItem.bypass_llm = item.bypass_llm;
-          localItem.force_consistency = item.force_consistency;
           localItem.parent_id = item.parent_id;
-          localItem.upscale_input = item.upscale_input;
           localItem.progress = item.progress;
+          localItem.upscaled = item.upscaled;
+          localItem.megapixels = item.megapixels;
+          localItem.custom_size = item.custom_size;
+          localItem.aspect_ratio = item.aspect_ratio;
         }
       });
 
@@ -1201,21 +1273,23 @@ function renderGallery() {
       card.appendChild(badge);
     }
 
-    // Add upscale badge
-    if (item.upscale_input) {
-      const badge = document.createElement('div');
-      badge.style.cssText = 'position:absolute;bottom:8px;right:8px;background:rgba(16, 185, 129, 0.85);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);color:#fff;font-size:9px;font-weight:700;padding:2.5px 8px;border-radius:999px;z-index:5;text-transform:uppercase;letter-spacing:0.05em;box-shadow:0 2px 4px rgba(0,0,0,0.3);display:flex;align-items:center;gap:3px;';
-      badge.innerHTML = `
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;">
+    // Add 2MP badge for upscaled images
+    if (item.upscaled) {
+      const upBadge = document.createElement('div');
+      upBadge.style.cssText = 'position:absolute;top:8px;left:8px;background:rgba(37,99,235,0.85);backdrop-filter:blur(4px);color:#fff;font-size:9px;font-weight:700;padding:2px 8px;border-radius:999px;z-index:5;text-transform:uppercase;letter-spacing:0.05em;display:flex;align-items:center;gap:4px;box-shadow:0 2px 6px rgba(0,0,0,0.3);';
+      upBadge.innerHTML = `
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="17 11 21 7 17 3"></polyline>
           <polyline points="21 7 12 7 12 16"></polyline>
           <polyline points="7 13 3 17 7 21"></polyline>
           <polyline points="3 17 12 17"></polyline>
         </svg>
-        <span>Upscaled</span>
+        2MP
       `;
-      card.appendChild(badge);
+      card.appendChild(upBadge);
     }
+
+
 
     // Selection indicators overlay
     if (isSelectionMode) {
@@ -1368,17 +1442,24 @@ function updateModalContent() {
   // Directly assign source (no empty string clearing) to prevent image flashing
   viewImage.src = `/images/${item.filename}`;
   
-  // Display split original prompt and LLM expanded prompt
-  if (item.prompt_original && item.prompt_original !== item.prompt) {
+  // Display split original prompt and LLM expanded prompt (truncated preview with full copy)
+  const origPrompt = item.prompt_original || '';
+  const finalPrompt = item.prompt || '';
+
+  if (origPrompt && origPrompt !== finalPrompt) {
     originalPromptWrapper.style.display = 'block';
-    viewOriginalPrompt.textContent = item.prompt_original;
+    viewOriginalPrompt.dataset.fullPrompt = origPrompt;
+    viewOriginalPrompt.textContent = truncatePrompt(origPrompt, 160);
+    viewOriginalPrompt.title = "Click to copy full original prompt";
     txtPromptFinalTitle.textContent = "Optimized Prompt (LLM)";
   } else {
     originalPromptWrapper.style.display = 'none';
     txtPromptFinalTitle.textContent = "Used Prompt";
   }
   
-  viewPrompt.textContent = item.prompt || '—';
+  viewPrompt.dataset.fullPrompt = finalPrompt;
+  viewPrompt.textContent = finalPrompt ? truncatePrompt(finalPrompt, 160) : '—';
+  viewPrompt.title = "Click to copy full prompt";
   modalCounter.textContent = `${modalIndex + 1} / ${galleryItems.length}`;
   currentBaseId = item.id;
 
@@ -1386,9 +1467,9 @@ function updateModalContent() {
   const badgeContainer = document.getElementById('badgeContainer');
   if (badgeContainer) {
     badgeContainer.innerHTML = '';
-    if (item.upscale_input) {
-      const upscaleBadge = document.createElement('div');
-      upscaleBadge.style.cssText = 'background:rgba(16, 185, 129, 0.2);color:#10b981;border:1px solid rgba(16, 185, 129, 0.4);font-size:10px;font-weight:700;padding:2px 8px;border-radius:6px;text-transform:uppercase;letter-spacing:0.05em;display:inline-flex;align-items:center;gap:4px;';
+    if (item.upscaled) {
+      const upscaleBadge = document.createElement('span');
+      upscaleBadge.style.cssText = 'background: rgba(37,99,235,0.25); border: 1px solid rgba(59,130,246,0.4); color: #93c5fd; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px;';
       upscaleBadge.innerHTML = `
         <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
           <polyline points="17 11 21 7 17 3"></polyline>
@@ -1396,22 +1477,21 @@ function updateModalContent() {
           <polyline points="7 13 3 17 7 21"></polyline>
           <polyline points="3 17 12 17"></polyline>
         </svg>
-        Upscaled (4x)
+        Upscaled (2MP)
       `;
       badgeContainer.appendChild(upscaleBadge);
     }
   }
 
-  // Toggle buttons visibility and text based on root upload vs variation status
+  // Toggle buttons visibility based on root upload vs variation status
   const btnReprocess = document.getElementById('btnReprocessCurrent');
+  if (btnReprocess) {
+    btnReprocess.style.display = (item.parent_id === null) ? 'none' : 'flex';
+  }
+  const isAlreadyMaxRes = Boolean(item.upscaled === true || (item.megapixels && item.megapixels >= 2.0));
   const btnUpscale = document.getElementById('btnUpscaleCurrent');
-  
-  if (item.parent_id === null) {
-    btnReprocess.style.display = 'none';
-    btnUpscale.querySelector('span').textContent = 'Upscale (4x)';
-  } else {
-    btnReprocess.style.display = 'flex';
-    btnUpscale.querySelector('span').textContent = 'Upscale (4x)';
+  if (btnUpscale) {
+    btnUpscale.style.display = (item.status === 'completed' && !isAlreadyMaxRes) ? 'flex' : 'none';
   }
 }
 
@@ -1790,17 +1870,125 @@ imageModal.addEventListener('touchend', (e) => {
   gestureLocked = null;
 }, { passive: true });
 
-// ── Variation modal ───────────────────────────────────────────────────────────
+// ── Variation modal (Qwen Image 2.1 Edit) ────────────────────────────────────
+let additionalReferenceImages = [];
+
+function toggleCustomSizeOptions() {
+  const chk = document.getElementById('customSizeCheckbox');
+  const container = document.getElementById('customSizeContainer');
+  if (container) {
+    container.style.display = chk.checked ? 'flex' : 'none';
+  }
+}
+
+function renderRefImagesList() {
+  const list = document.getElementById('refImagesList');
+  const count = document.getElementById('refImagesCount');
+  if (!list) return;
+  list.innerHTML = '';
+  
+  // 1. Base Image (<image1>)
+  const baseCard = document.createElement('div');
+  baseCard.className = 'ref-thumb-card';
+  baseCard.style.cssText = 'position:relative;flex-shrink:0;width:60px;height:60px;border-radius:8px;overflow:hidden;border:2px solid #2563eb;background:#000;';
+  baseCard.title = 'Click to copy <image1>';
+  baseCard.innerHTML = `
+    <img src="${document.getElementById('promptRefImage').src}" style="width:100%;height:100%;object-fit:cover;pointer-events:none;">
+    <span style="position:absolute;bottom:0;left:0;right:0;background:rgba(37,99,235,0.9);color:#fff;font-size:9px;font-weight:700;text-align:center;padding:1px 0;pointer-events:none;">&lt;image1&gt;</span>
+  `;
+  baseCard.addEventListener('click', () => {
+    copyTextToClipboard('<image1>', 'Copied <image1> to clipboard!');
+  });
+  list.appendChild(baseCard);
+
+  // 2. Extra Reference Images (<image2>..<image10>)
+  additionalReferenceImages.forEach((ref, idx) => {
+    const tagNum = idx + 2;
+    const tagStr = `<image${tagNum}>`;
+    const card = document.createElement('div');
+    card.className = 'ref-thumb-card';
+    card.style.cssText = 'position:relative;flex-shrink:0;width:60px;height:60px;border-radius:8px;overflow:hidden;border:1px solid #4b5563;background:#000;';
+    card.title = `Click to copy ${tagStr}`;
+    card.innerHTML = `
+      <img src="${ref.url}" style="width:100%;height:100%;object-fit:cover;pointer-events:none;">
+      <span style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,0.75);color:#a5f3fc;font-size:9px;font-weight:700;text-align:center;padding:1px 0;pointer-events:none;">&lt;image${tagNum}&gt;</span>
+      <button type="button" class="btn-remove-ref" style="position:absolute;top:2px;right:2px;background:rgba(239,68,68,0.9);color:#fff;border:none;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:10;" title="Remove image">✕</button>
+    `;
+
+    const removeBtn = card.querySelector('.btn-remove-ref');
+    removeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeRefImage(idx);
+    });
+
+    card.addEventListener('click', () => {
+      copyTextToClipboard(tagStr, `Copied ${tagStr} to clipboard!`);
+    });
+
+    list.appendChild(card);
+  });
+
+  if (count) count.textContent = additionalReferenceImages.length + 1;
+  const btnAdd = document.getElementById('btnAddRefImage');
+  if (btnAdd) {
+    btnAdd.style.display = additionalReferenceImages.length >= 9 ? 'none' : 'flex';
+  }
+}
+
+async function handleRefImageSelected(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  if (additionalReferenceImages.length >= 9) {
+    alert('Maximum 10 images total (1 base image + 9 reference images).');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const res = await fetch('/api/upload-reference', {
+      method: 'POST',
+      body: formData
+    });
+    if (!res.ok) throw new Error('Upload failed');
+    const data = await res.json();
+    const localUrl = URL.createObjectURL(file);
+    additionalReferenceImages.push({
+      id: data.id,
+      filename: data.filename,
+      comfyName: data.comfyName,
+      url: localUrl
+    });
+    renderRefImagesList();
+  } catch (e) {
+    alert('Failed to upload reference image: ' + e.message);
+  } finally {
+    event.target.value = '';
+  }
+}
+
+function removeRefImage(index) {
+  additionalReferenceImages.splice(index, 1);
+  renderRefImagesList();
+}
+
 function openPromptModal() {
   const item = galleryItems[modalIndex];
   if (!item) return;
   document.getElementById('promptRefImage').src = `/images/${item.filename}`;
   currentBaseId = item.id;
   promptText.value = '';
-  document.getElementById('upscaleInputCheckbox').checked = false;
+  additionalReferenceImages = [];
+  document.getElementById('customSizeCheckbox').checked = true;
+  toggleCustomSizeOptions();
+  document.getElementById('aspectRatioSelect').value = '1:1 (Square)';
+  document.getElementById('megapixelsSlider').value = '0.5';
+  document.getElementById('megapixelsVal').textContent = '0.5 MP';
   document.getElementById('bypassLlmCheckbox').checked = false;
-  document.getElementById('forceConsistencyCheckbox').checked = true;
+  renderRefImagesList();
   promptModal.style.display = 'flex';
+  const modalScrollContainer = promptModal.querySelector('div');
+  if (modalScrollContainer) modalScrollContainer.scrollTop = 0;
 }
 
 function closePromptModal() {
@@ -1812,9 +2000,11 @@ async function submitPrompt() {
   if (!prompt || !currentBaseId) return;
 
   const btn = document.getElementById('btnSubmitPrompt');
-  const upscaleInput = document.getElementById('upscaleInputCheckbox').checked;
+  const customSize = document.getElementById('customSizeCheckbox').checked;
+  const aspectRatio = document.getElementById('aspectRatioSelect').value;
+  const megapixels = parseFloat(document.getElementById('megapixelsSlider').value);
   const bypassLlm = document.getElementById('bypassLlmCheckbox').checked;
-  const forceConsistency = document.getElementById('forceConsistencyCheckbox').checked;
+  const additionalImages = additionalReferenceImages.map(img => img.comfyName);
   const btnOriginalText = btn.innerHTML;
   
   // Submit processing visual feedback
@@ -1837,9 +2027,11 @@ async function submitPrompt() {
       body: JSON.stringify({ 
         base_id: currentBaseId, 
         prompt: prompt,
-        upscale_input: upscaleInput,
-        bypass_llm: bypassLlm,
-        force_consistency: forceConsistency
+        additional_images: additionalImages,
+        custom_size: customSize,
+        aspect_ratio: aspectRatio,
+        megapixels: megapixels,
+        bypass_llm: bypassLlm
       })
     });
     if (!res.ok) {
@@ -1893,14 +2085,13 @@ async function openConfigModal() {
     comfyModels = null;
   }
 
-  // Text fields
+  // Text fields & LLM settings
   document.getElementById('cfgComfyUrl').value = cfg.comfy_url || '';
   document.getElementById('cfgComfyRoot').value = cfg.comfy_root || '';
-  document.getElementById('cfgApiKey').value = '';
-  document.getElementById('cfgClearApiKey').checked = false;
-  document.getElementById('cfgApiKeyStatus').textContent = cfg.openrouter_configured
-    ? 'A key is configured on the server'
-    : 'Not configured';
+  document.getElementById('cfgLlmProvider').value = cfg.llm_provider || 'deepseek';
+  document.getElementById('cfgDeepSeekApiKey').value = cfg.deepseek_api_key || '';
+  document.getElementById('cfgDeepSeekModel').value = cfg.deepseek_model || 'deepseek-flash';
+  document.getElementById('cfgApiKey').value = cfg.openrouter_api_key || '';
   document.getElementById('cfgOpenRouterModels').value = (cfg.openrouter_models || []).join('\n');
   document.getElementById('cfgSystemPrompt').value = cfg.system_prompt || '';
 
@@ -1909,8 +2100,6 @@ async function openConfigModal() {
     populateSelect(document.getElementById('cfgDiffusionModel'), comfyModels.diffusion_models, cfg.diffusion_model_name);
     populateSelect(document.getElementById('cfgClipModel'), comfyModels.clip_models, cfg.clip_model_name);
     populateSelect(document.getElementById('cfgVaeModel'), comfyModels.vae_models, cfg.vae_model_name);
-    populateSelect(document.getElementById('cfgUpscaleModel'), comfyModels.upscale_models, cfg.upscale_model_name);
-    populateSelect(document.getElementById('cfgInputUpscaleModel'), comfyModels.upscale_models, cfg.input_upscale_model_name);
   }
 
   configModal.style.display = 'flex';
@@ -1928,17 +2117,17 @@ function selectVal(id) {
 async function saveConfig() {
   const comfyUrl = selectVal('cfgComfyUrl');
   const comfyRoot = selectVal('cfgComfyRoot');
+  const llmProvider = selectVal('cfgLlmProvider') || 'deepseek';
+  const deepseekApiKey = selectVal('cfgDeepSeekApiKey');
+  const deepseekModel = selectVal('cfgDeepSeekModel') || 'deepseek-flash';
   const apiKey = selectVal('cfgApiKey');
-  const clearApiKey = document.getElementById('cfgClearApiKey').checked;
   const openRouterModels = document.getElementById('cfgOpenRouterModels').value.split('\n').map(m => m.trim()).filter(m => m.length > 0);
   const systemPrompt = document.getElementById('cfgSystemPrompt').value;
   const diffusionModel = selectVal('cfgDiffusionModel');
   const clipModel = selectVal('cfgClipModel');
   const vaeModel = selectVal('cfgVaeModel');
-  const upscaleModel = selectVal('cfgUpscaleModel');
-  const inputUpscaleModel = selectVal('cfgInputUpscaleModel');
 
-  if (!comfyUrl || !diffusionModel || !upscaleModel || openRouterModels.length === 0) {
+  if (!comfyUrl || !diffusionModel) {
     alert('Please fill in all required fields.');
     return;
   }
@@ -1954,15 +2143,15 @@ async function saveConfig() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         system_prompt: systemPrompt,
+        llm_provider: llmProvider,
+        deepseek_api_key: deepseekApiKey,
+        deepseek_model: deepseekModel,
+        openrouter_api_key: apiKey,
         openrouter_models: openRouterModels,
         diffusion_model_name: diffusionModel,
         clip_model_name: clipModel,
         vae_model_name: vaeModel,
-        upscale_model_name: upscaleModel,
-        input_upscale_model_name: inputUpscaleModel,
         comfy_url: comfyUrl,
-        openrouter_api_key: apiKey || null,
-        clear_openrouter_api_key: clearApiKey,
         comfy_root: comfyRoot
       })
     });
@@ -1981,7 +2170,7 @@ async function saveConfig() {
   }
 }
 
-// ── Cancel & Reprocess & Upscale Actions ──────────────────────────────────────
+// ── Cancel & Reprocess Actions ──────────────────────────────────────────────
 async function cancelPendingItem(id, event) {
   if (event) {
     event.stopPropagation();
@@ -2032,37 +2221,6 @@ async function deleteSingleItem(id, event, bypassConfirm = false) {
   }
 }
 
-async function upscaleSingleItem(item, event) {
-  if (event) {
-    event.stopPropagation();
-    event.preventDefault();
-  }
-  if (!item) return;
-
-  try {
-    const res = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        base_id: item.id, 
-        prompt: "",
-        upscale_input: true,
-        bypass_llm: true,
-        force_consistency: false,
-        upscale_target_id: item.id
-      })
-    });
-    if (res.ok) {
-      showToast('Upscale request submitted!');
-      await loadFirstPage();
-    } else {
-      alert('Error submitting upscale request.');
-    }
-  } catch(e) {
-    alert('Server connection error.');
-  }
-}
-
 function showCardActionsOverlay(card, item) {
   if (card.querySelector('.card-action-overlay')) return;
   
@@ -2072,8 +2230,14 @@ function showCardActionsOverlay(card, item) {
   const overlay = document.createElement('div');
   overlay.className = 'card-action-overlay';
   overlay.innerHTML = `
-    <button class="overlay-btn-upscale" style="background:#2563eb;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;box-shadow:0 4px 10px rgba(37,99,235,0.3);width:80%;justify-content:center;cursor:pointer;transition:transform 0.15s;outline:none;">
-      <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M12 4v16m8-8H4"/></svg> Upscale
+    <button class="overlay-btn-upscale" style="background:#2563eb;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;box-shadow:0 4px 10px rgba(37,99,235,0.3);width:80%;justify-content:center;cursor:pointer;transition:transform 0.15s;outline:none;margin-bottom:8px;">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="17 11 21 7 17 3"></polyline>
+        <polyline points="21 7 12 7 12 16"></polyline>
+        <polyline points="7 13 3 17 7 21"></polyline>
+        <polyline points="3 17 12 17"></polyline>
+      </svg>
+      Upscale (2MP)
     </button>
     <button class="overlay-btn-delete" style="background:#ef4444;color:#fff;border:none;border-radius:9999px;padding:8px 16px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;box-shadow:0 4px 10px rgba(239,68,68,0.3);width:80%;justify-content:center;cursor:pointer;transition:transform 0.15s;outline:none;">
       <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg> Delete
@@ -2087,6 +2251,18 @@ function showCardActionsOverlay(card, item) {
   overlay.offsetHeight;
   overlay.classList.add('show');
 
+  const upscaleBtn = overlay.querySelector('.overlay-btn-upscale');
+  const isAlreadyMaxRes = Boolean(item.upscaled === true || (item.megapixels && item.megapixels >= 2.0));
+  if (item.status !== 'completed' || isAlreadyMaxRes) {
+    upscaleBtn.style.display = 'none';
+  }
+  upscaleBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    overlay.remove();
+    await triggerUpscale(item.id);
+  });
+
   overlay.addEventListener('click', (e) => {
     e.stopPropagation();
     e.preventDefault();
@@ -2098,17 +2274,6 @@ function showCardActionsOverlay(card, item) {
     e.preventDefault();
     overlay.classList.remove('show');
     setTimeout(() => overlay.remove(), 250);
-  });
-
-  const upscaleBtn = overlay.querySelector('.overlay-btn-upscale');
-  if (item.status === 'failed') {
-    upscaleBtn.style.display = 'none';
-  }
-  upscaleBtn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    overlay.remove();
-    await upscaleSingleItem(item, e);
   });
 
   const deleteBtn = overlay.querySelector('.overlay-btn-delete');
@@ -2131,9 +2296,43 @@ function showCardActionsOverlay(card, item) {
   document.addEventListener('touchstart', outsideTapHandler, { passive: true });
 }
 
+async function triggerUpscale(itemId) {
+  const item = galleryItems.find(i => i.id === itemId);
+  if (item && item.status === 'completed' && (item.upscaled === true || (item.megapixels && item.megapixels >= 2.0))) {
+    showToast('This image is already at maximum resolution (2MP).');
+    return;
+  }
+  try {
+    showToast('Starting Upscale (2MP)...');
+    const res = await fetch('/api/upscale', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ item_id: itemId })
+    });
+    if (res.ok) {
+      showToast('Upscale requested successfully!');
+      if (viewMode === 'roots') {
+        await navigateToLineage(itemId);
+      } else {
+        await loadFirstPage();
+      }
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(err.detail || 'Error requesting upscale.');
+    }
+  } catch(e) {
+    alert('Connection error while requesting upscale.');
+  }
+}
+
 async function upscaleCurrent() {
   const item = galleryItems[modalIndex];
   if (!item) return;
+
+  if (item.status === 'completed' && (item.upscaled === true || (item.megapixels && item.megapixels >= 2.0))) {
+    showToast('This image is already at maximum resolution (2MP).');
+    return;
+  }
 
   const btn = document.getElementById('btnUpscaleCurrent');
   const originalHTML = btn.innerHTML;
@@ -2150,36 +2349,26 @@ async function upscaleCurrent() {
   `;
 
   try {
-    const res = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        base_id: item.id, 
-        prompt: "",
-        upscale_input: true,
-        bypass_llm: true,
-        force_consistency: false,
-        upscale_target_id: item.id
-      })
-    });
-    if (!res.ok) {
-      alert('Error submitting upscale request.');
-    }
-  } catch(e) {
-    alert('Server connection error.');
+    closeImageModal();
+    await triggerUpscale(item.id);
   } finally {
     btn.disabled = false;
     btn.style.opacity = '1';
     btn.innerHTML = originalHTML;
-    
-    closeImageModal();
-    await loadFirstPage();
   }
 }
 
 async function reprocessCurrent() {
   const item = galleryItems[modalIndex];
-  if (!item || !item.parent_id) return;
+  if (!item) return;
+
+  if (item.upscaled) {
+    closeImageModal();
+    await triggerUpscale(item.parent_id || item.id);
+    return;
+  }
+
+  if (!item.parent_id) return;
 
   const btn = document.getElementById('btnReprocessCurrent');
   const originalHTML = btn.innerHTML;
@@ -2202,9 +2391,7 @@ async function reprocessCurrent() {
       body: JSON.stringify({ 
         base_id: item.parent_id, 
         prompt: item.prompt,
-        upscale_input: item.upscale_input || false,
-        bypass_llm: true,
-        force_consistency: false
+        bypass_llm: true
       })
     });
     if (!res.ok) {
@@ -2229,18 +2416,17 @@ async function reprocessCurrent() {
 
 async function retrySingleFailed(item) {
   if (!item) return;
-  const isUpscale = item.upscale_input;
   try {
+    if (item.upscaled) {
+      await triggerUpscale(item.parent_id || item.id);
+      return;
+    }
+
     const payload = {
       base_id: item.parent_id || item.id,
       prompt: item.prompt_original || item.prompt,
-      upscale_input: isUpscale,
-      bypass_llm: true,
-      force_consistency: item.force_consistency || false,
+      bypass_llm: true
     };
-    if (isUpscale) {
-      payload.upscale_target_id = item.id;
-    }
 
     const res = await fetch('/api/generate', {
       method: 'POST',
@@ -2257,6 +2443,7 @@ async function retrySingleFailed(item) {
     alert('Server connection error.');
   }
 }
+
 
 // ── Upload ────────────────────────────────────────────────────────────────────
 document.getElementById('uploadInput').addEventListener('change', async (e) => {

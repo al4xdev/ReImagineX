@@ -1,15 +1,4 @@
 {
-  "13": {
-    "inputs": {
-      "aspect_ratio": "1:1 (Square)",
-      "megapixels": 1.0,
-      "multiple": 32
-    },
-    "class_type": "ResolutionSelector",
-    "_meta": {
-      "title": "Resolution Selector"
-    }
-  },
   "461": {
     "inputs": {
       "filename_prefix": "Qwen_image_2.1",
@@ -28,7 +17,7 @@
   },
   "470": {
     "inputs": {
-      "image": "input_image.png"
+      "image": "Qwen_image_2.1_00062.png"
     },
     "class_type": "LoadImage",
     "_meta": {
@@ -67,14 +56,8 @@
   },
   "459:456": {
     "inputs": {
-      "width": [
-        "13",
-        0
-      ],
-      "height": [
-        "13",
-        1
-      ],
+      "width": 1024,
+      "height": 1024,
       "batch_size": 1
     },
     "class_type": "EmptyLatentImage",
@@ -100,12 +83,12 @@
   },
   "459:458": {
     "inputs": {
-      "seed": 0,
+      "seed": 440958501633627,
       "steps": 25,
-      "cfg": 1.0,
+      "cfg": 1,
       "sampler_name": "euler",
       "scheduler": "simple",
-      "denoise": 1.0,
+      "denoise": 1,
       "model": [
         "459:469",
         0
@@ -130,7 +113,7 @@
   },
   "459:468": {
     "inputs": {
-      "switch": false,
+      "switch": true,
       "on_false": [
         "459:474",
         2
@@ -161,7 +144,7 @@
   },
   "459:474": {
     "inputs": {
-      "prompt": "PROMPT_HERE",
+      "prompt": "Keep the image visually the same. Preserve the subject’s identity, facial features, hairstyle, body proportions, pose, clothing, background, framing, and lighting. Only reduce noise, clean artifacts, refine textures, and improve sharpness and detail for a cleaner high-resolution result.",
       "negative_prompt": "",
       "resolution": 0,
       "clip": [
