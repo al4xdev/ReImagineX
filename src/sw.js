@@ -1,4 +1,4 @@
-const CACHE_NAME = 'reimaginex-cache-v2';
+const CACHE_NAME = 'reimaginex-cache-v3';
 const ASSETS = [
   '/',
   '/icon.svg',
@@ -31,25 +31,42 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
+async function fetchAndCache(request) {
+  const response = await fetch(request);
+  if (response && response.status === 200 && response.type === 'basic') {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(request, response.clone());
+  }
+  return response;
+}
+
 self.addEventListener('fetch', (event) => {
-  if (event.request.url.includes('/api/') || event.request.url.includes('/ws')) {
+  const request = event.request;
+  if (request.method !== 'GET') {
     return;
   }
-  
-  event.respondWith(
-    caches.match(event.request).then((cachedResponse) => {
-      if (cachedResponse) {
-        return cachedResponse;
+  if (request.url.includes('/api/') || request.url.includes('/ws')) {
+    return;
+  }
+
+  // The app shell and the document itself must never be served stale, otherwise
+  // frontend fixes would never reach an installed PWA. Everything else stays
+  // cache-first.
+  const freshFirst = request.mode === 'navigate' || new URL(request.url).pathname === '/';
+
+  event.respondWith((async () => {
+    if (!freshFirst) {
+      const cached = await caches.match(request);
+      if (cached) {
+        return cached;
       }
-      return fetch(event.request).then((response) => {
-        if (response && response.status === 200 && response.type === 'basic') {
-          const responseToCache = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, responseToCache);
-          });
-        }
-        return response;
-      }).catch(() => {});
-    })
-  );
+    }
+    try {
+      return await fetchAndCache(request);
+    } catch (err) {
+      const cached = await caches.match(request);
+      // respondWith must always resolve to a Response, never undefined.
+      return cached || new Response('Offline', { status: 503, statusText: 'Offline' });
+    }
+  })());
 });

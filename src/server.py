@@ -1,9 +1,13 @@
 import asyncio
 import json
 import os
+import shutil
+import sys
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Optional
+from pathlib import Path
+from typing import Any, Optional, cast
 
 import httpx
 import uvicorn
@@ -15,10 +19,9 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel, Field
 
-# Modularized Imports
-from config import load_settings, save_settings
-from state_manager import _load, _save, delete_item_reparent, load_state, state_lock
-from workflow import build_generation_workflow, build_upscale_workflow
+from src.config import load_settings, save_settings
+from src.state_manager import _load, _save, delete_item_reparent, load_state, state_lock
+from src.workflow import build_generation_workflow, build_upscale_workflow
 
 # ── Configurations & Initial State ───────────────────────────────────────────
 startup_settings = load_settings()
@@ -27,25 +30,59 @@ STARTUP_THUMB_DIR = os.path.join(startup_settings.data_dir, "thumbnails")
 os.makedirs(STARTUP_IMG_DIR, exist_ok=True)
 os.makedirs(STARTUP_THUMB_DIR, exist_ok=True)
 
+THUMBNAIL_SIZE = (400, 400)
+THUMBNAIL_QUALITY = 80
+
+
+def thumbnail_path_for(image_path: str) -> str:
+    """Map an image path inside STARTUP_IMG_DIR to its JPEG thumbnail path."""
+    thumb_path = image_path.replace(STARTUP_IMG_DIR, STARTUP_THUMB_DIR)
+    return os.path.splitext(thumb_path)[0] + ".jpg"
+
+
+def render_thumbnail(image_path: str | os.PathLike[str], thumb_path: str | os.PathLike[str]) -> None:
+    """Write a JPEG thumbnail of `image_path` to `thumb_path`."""
+    thumb = Path(thumb_path)
+    thumb.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(image_path) as opened:
+        opened.thumbnail(THUMBNAIL_SIZE)
+        img = opened.convert("RGB") if opened.mode in ("RGBA", "P") else opened
+        img.save(thumb, "JPEG", quality=THUMBNAIL_QUALITY)
+
+
+def write_thumbnail(image_path: str) -> None:
+    """Generate the JPEG thumbnail for an image that already exists on disk."""
+    try:
+        render_thumbnail(image_path, thumbnail_path_for(image_path))
+    except Exception as e:
+        print(f"Thumbnail error: {e}")
+
+
 def save_image_with_thumbnail(filepath: str, data: bytes) -> None:
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     with open(filepath, "wb") as f:
         f.write(data)
-    # Generate thumbnail (400px max, JPEG ~80% quality)
-    thumb_path = filepath.replace(STARTUP_IMG_DIR, STARTUP_THUMB_DIR)
-    thumb_path = os.path.splitext(thumb_path)[0] + ".jpg"
-    os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
-    try:
-        from io import BytesIO
-        img = Image.open(BytesIO(data))
-        img.thumbnail((400, 400))
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-        img.save(thumb_path, "JPEG", quality=80)
-    except Exception as e:
-        print(f"Thumbnail error: {e}")
+    write_thumbnail(filepath)
 
 # ── ComfyUI Integration ───────────────────────────────────────────────────────
+def _first_image_batch(outputs: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Return the first non-empty `images` batch in a ComfyUI output payload.
+
+    `outputs` is either a single node output (WebSocket `executed` event) or the
+    `outputs` map of a history entry, so both the flat and the per-node shapes
+    are inspected.
+    """
+    direct = outputs.get("images")
+    if isinstance(direct, list) and direct:
+        return cast(list[dict[str, Any]], direct)
+    for value in outputs.values():
+        if isinstance(value, dict):
+            images = value.get("images")
+            if isinstance(images, list) and images:
+                return cast(list[dict[str, Any]], images)
+    return None
+
+
 async def upload_to_comfy(filepath: str, filename: str) -> str:
     settings = load_settings()
     # Use only the basename for ComfyUI upload to prevent path traversal issues on ComfyUI side
@@ -54,7 +91,7 @@ async def upload_to_comfy(filepath: str, filename: str) -> str:
         with open(filepath, "rb") as f:
             res = await client.post(f"{settings.comfy_url}/upload/image", files={"image": (upload_name, f, "image/png")})
             res.raise_for_status()
-            return res.json()["name"]
+            return str(res.json()["name"])
 
 CLIENT_ID = str(uuid.uuid4())
 
@@ -67,7 +104,7 @@ def get_ws_url(comfy_url: str) -> str:
     else:
         return f"ws://{url}/ws?clientId={CLIENT_ID}"
 
-async def handle_node_executed(pid: str, images_list: list[dict]) -> None:
+async def handle_node_executed(pid: str, images_list: list[dict[str, Any]]) -> None:
     try:
         settings = load_settings()
         state = await load_state()
@@ -90,19 +127,7 @@ async def handle_node_executed(pid: str, images_list: list[dict]) -> None:
                     if os.path.exists(local_path):
                         os.unlink(local_path)
                     os.link(comfy_output_file, local_path)
-                    
-                    # Generate thumbnail from local_path
-                    thumb_path = local_path.replace(STARTUP_IMG_DIR, STARTUP_THUMB_DIR)
-                    thumb_path = os.path.splitext(thumb_path)[0] + ".jpg"
-                    os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
-                    try:
-                        img = Image.open(local_path)
-                        img.thumbnail((400, 400))
-                        if img.mode in ("RGBA", "P"):
-                            img = img.convert("RGB")
-                        img.save(thumb_path, "JPEG", quality=80)
-                    except Exception as e_thumb:
-                        print(f"Thumbnail error: {e_thumb}")
+                    write_thumbnail(local_path)
                     linked = True
                     print(f"Created Unix hard link via WebSocket from {comfy_output_file} to {local_path}")
                 except Exception as e_link:
@@ -139,7 +164,7 @@ async def handle_prompt_failure(pid: str) -> None:
             _save(current_state)
             print(f"Marked prompt {pid} as failed via WebSocket execution error.")
 
-active_progress = {}
+active_progress: dict[str, float] = {}
 
 async def websocket_listener() -> None:
     backoff = 1.0
@@ -182,12 +207,7 @@ async def websocket_listener() -> None:
                         if pid:
                             active_progress.pop(pid, None)
                         output = data.get("output", {})
-                        images = output.get("images") if isinstance(output, dict) else None
-                        if not images and isinstance(output, dict):
-                            for k in ("461", "3"):
-                                if k in output and isinstance(output[k], dict) and "images" in output[k]:
-                                    images = output[k]["images"]
-                                    break
+                        images = _first_image_batch(output) if isinstance(output, dict) else None
                         if pid and images:
                             asyncio.create_task(handle_node_executed(pid, images))
                     elif etype == "execution_error":
@@ -200,7 +220,7 @@ async def websocket_listener() -> None:
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, 30.0)
 
-async def check_comfy_queue():
+async def check_comfy_queue() -> None:
     while True:
         try:
             settings = load_settings()
@@ -208,8 +228,8 @@ async def check_comfy_queue():
             pending = [i for i in state if i["status"] == "pending"]
             if pending:
                 async with httpx.AsyncClient(timeout=10.0) as client:
-                    history = (await client.get(f"{settings.comfy_url}/history")).json()
-                    queue_data = (await client.get(f"{settings.comfy_url}/queue")).json()
+                    history = cast(dict[str, Any], (await client.get(f"{settings.comfy_url}/history")).json())
+                    queue_data = cast(dict[str, Any], (await client.get(f"{settings.comfy_url}/queue")).json())
                     
                     # Extract active ComfyUI task IDs
                     running_ids = [q_item[1] for q_item in queue_data.get("queue_running", [])]
@@ -219,18 +239,11 @@ async def check_comfy_queue():
                     ghost_ids = []
                     for item in pending:
                         pid = item["prompt_id"]
-                        if pid in history:
-                            img_data = None
-                            outputs = history[pid].get("outputs", {})
-                            for nid in ("461", "3"):
-                                if nid in outputs and isinstance(outputs[nid], dict) and "images" in outputs[nid] and outputs[nid]["images"]:
-                                    img_data = outputs[nid]["images"][0]
-                                    break
-                            if not img_data:
-                                for nid, val in outputs.items():
-                                    if isinstance(val, dict) and "images" in val and val["images"]:
-                                        img_data = val["images"][0]
-                                        break
+                        history_entry = history.get(pid)
+                        if isinstance(history_entry, dict):
+                            outputs = history_entry.get("outputs", {})
+                            batch = _first_image_batch(outputs) if isinstance(outputs, dict) else None
+                            img_data = batch[0] if batch else None
                             if img_data:
                                 url = f"{settings.comfy_url}/view?filename={img_data['filename']}&subfolder={img_data['subfolder']}&type={img_data['type']}"
                                 
@@ -248,18 +261,7 @@ async def check_comfy_queue():
                                             if os.path.exists(local_path):
                                                 os.unlink(local_path)
                                             os.link(comfy_output_file, local_path)
-                                            # Generate thumbnail
-                                            thumb_path = local_path.replace(STARTUP_IMG_DIR, STARTUP_THUMB_DIR)
-                                            thumb_path = os.path.splitext(thumb_path)[0] + ".jpg"
-                                            os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
-                                            try:
-                                                img = Image.open(local_path)
-                                                img.thumbnail((400, 400))
-                                                if img.mode in ("RGBA", "P"):
-                                                    img = img.convert("RGB")
-                                                img.save(thumb_path, "JPEG", quality=80)
-                                            except Exception as e_thumb:
-                                                print(f"Thumbnail error: {e_thumb}")
+                                            write_thumbnail(local_path)
                                             linked = True
                                             print(f"Created Unix hard link from {comfy_output_file} to {local_path}")
                                         except Exception as e_link:
@@ -299,7 +301,7 @@ async def check_comfy_queue():
         await asyncio.sleep(1.5)
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     task = asyncio.create_task(check_comfy_queue())
     ws_task = asyncio.create_task(websocket_listener())
     yield
@@ -315,11 +317,11 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 # ── API Endpoints ─────────────────────────────────────────────────────────────
 @app.get("/api/state")
-async def get_state(limit: int = 20, offset: int = 0, root_id: str = None):
+async def get_state(limit: int = 20, offset: int = 0, root_id: Optional[str] = None) -> list[dict[str, Any]]:
     state = await load_state()
     if root_id:
         # Return a specific item + all its descendants (lineage view)
-        def get_descendants(parent_id):
+        def get_descendants(parent_id: str) -> list[dict[str, Any]]:
             children = []
             for item in state:
                 if item.get("parent_id") == parent_id:
@@ -346,7 +348,7 @@ async def get_state(limit: int = 20, offset: int = 0, root_id: str = None):
         return roots[offset : offset + limit]
 
 @app.post("/api/upload")
-async def handle_upload(file: UploadFile = File(...)):
+async def handle_upload(file: UploadFile = File(...)) -> dict[str, Any]:
     item_id = str(uuid.uuid4())
     # Initial upload root images are stored in gallery_data/imagens/root/
     filename = f"root/{item_id}.png"
@@ -371,7 +373,7 @@ async def handle_upload(file: UploadFile = File(...)):
     return new_item
 
 @app.post("/api/upload-reference")
-async def handle_upload_reference(file: UploadFile = File(...)):
+async def handle_upload_reference(file: UploadFile = File(...)) -> dict[str, Any]:
     ref_id = str(uuid.uuid4())
     ext = os.path.splitext(file.filename or "")[1] or ".png"
     filename = f"references/ref_{ref_id}{ext}"
@@ -425,7 +427,7 @@ async def expand_prompt_deepseek(user_prompt: str) -> Optional[str]:
                 }
             )
             if res.status_code == 200:
-                result = res.json()["choices"][0]["message"]["content"].strip()
+                result = str(res.json()["choices"][0]["message"]["content"]).strip()
                 if result.startswith("```"):
                     lines = result.splitlines()
                     if lines[0].startswith("```"):
@@ -471,7 +473,7 @@ async def expand_prompt_openrouter(user_prompt: str) -> Optional[str]:
                 )
                 
                 if res.status_code == 200:
-                    optimized_prompt = res.json()["choices"][0]["message"]["content"].strip()
+                    optimized_prompt = str(res.json()["choices"][0]["message"]["content"]).strip()
                     print(f"Success with OpenRouter [{model}]: {optimized_prompt}")
                     return optimized_prompt
                 else:
@@ -505,7 +507,7 @@ async def expand_prompt(user_prompt: str, preferred_provider: Optional[str] = No
     return user_prompt
 
 @app.post("/api/generate")
-async def generate(req: PromptRequest):
+async def generate(req: PromptRequest) -> dict[str, Any]:
     settings = load_settings()
     state = await load_state()
     
@@ -578,7 +580,7 @@ class UpscaleRequest(BaseModel):
     item_id: str
 
 @app.post("/api/upscale")
-async def upscale_image(req: UpscaleRequest):
+async def upscale_image(req: UpscaleRequest) -> dict[str, Any]:
     settings = load_settings()
     state = await load_state()
 
@@ -655,7 +657,7 @@ class DeleteRequest(BaseModel):
     ids: list[str]
 
 @app.post("/api/items/delete")
-async def delete_items(req: DeleteRequest):
+async def delete_items(req: DeleteRequest) -> dict[str, Any]:
     settings = load_settings()
     async with state_lock:
         state = _load()
@@ -694,7 +696,6 @@ async def delete_items(req: DeleteRequest):
             # 3. Remove the directory of descendants associated with this item ID
             dir_path = os.path.join(STARTUP_IMG_DIR, r_id)
             if os.path.exists(dir_path):
-                import shutil
                 try:
                     shutil.rmtree(dir_path, ignore_errors=True)
                 except OSError:
@@ -706,70 +707,81 @@ async def delete_items(req: DeleteRequest):
 class ConfigSchema(BaseModel):
     system_prompt: str
     llm_provider: str = "deepseek"
-    deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-flash"
-    openrouter_api_key: str = ""
     openrouter_models: list[str] = []
     diffusion_model_name: str
     clip_model_name: str
     vae_model_name: str
     comfy_url: str
     comfy_root: Optional[str] = None
+    # API keys are write-only: omit them (or send an empty string) to keep the
+    # stored secret, send a new value to replace it, or set the matching
+    # clear_* flag to delete it.
+    deepseek_api_key: Optional[str] = None
+    openrouter_api_key: Optional[str] = None
+    clear_deepseek_api_key: bool = False
+    clear_openrouter_api_key: bool = False
 
 @app.get("/api/config")
-async def get_config():
+async def get_config() -> dict[str, Any]:
     settings = load_settings()
     return {
         "system_prompt": settings.system_prompt,
         "llm_provider": settings.llm_provider,
-        "deepseek_api_key": settings.deepseek_api_key,
         "deepseek_model": settings.deepseek_model,
-        "openrouter_api_key": settings.openrouter_api_key,
         "openrouter_models": settings.openrouter_models,
         "diffusion_model_name": settings.diffusion_model_name,
         "clip_model_name": settings.clip_model_name,
         "vae_model_name": settings.vae_model_name,
         "comfy_url": settings.comfy_url,
-        "comfy_root": settings.comfy_root
+        "comfy_root": settings.comfy_root,
+        "deepseek_configured": bool(settings.deepseek_api_key),
+        "openrouter_configured": bool(settings.openrouter_api_key),
     }
 
 @app.post("/api/config")
-async def update_config(cfg: ConfigSchema):
+async def update_config(cfg: ConfigSchema) -> dict[str, str]:
     settings = load_settings()
     settings.system_prompt = cfg.system_prompt
     settings.llm_provider = cfg.llm_provider
-    settings.deepseek_api_key = cfg.deepseek_api_key
     settings.deepseek_model = cfg.deepseek_model
-    settings.openrouter_api_key = cfg.openrouter_api_key
     settings.openrouter_models = cfg.openrouter_models
     settings.diffusion_model_name = cfg.diffusion_model_name
     settings.clip_model_name = cfg.clip_model_name
     settings.vae_model_name = cfg.vae_model_name
     settings.comfy_url = cfg.comfy_url
     settings.comfy_root = cfg.comfy_root or ""
+    if cfg.clear_deepseek_api_key:
+        settings.deepseek_api_key = ""
+    elif cfg.deepseek_api_key:
+        settings.deepseek_api_key = cfg.deepseek_api_key
+    if cfg.clear_openrouter_api_key:
+        settings.openrouter_api_key = ""
+    elif cfg.openrouter_api_key:
+        settings.openrouter_api_key = cfg.openrouter_api_key
     save_settings(settings)
     return {"status": "ok"}
 
 @app.get("/api/comfy/models")
-async def get_comfy_models():
+async def get_comfy_models() -> dict[str, list[str]]:
     settings = load_settings()
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             res = await client.get(f"{settings.comfy_url}/object_info")
             res.raise_for_status()
-            info = res.json()
+            info = cast(dict[str, Any], res.json())
 
-        def extract_options(node_name, field_name):
+        def extract_options(node_name: str, field_name: str) -> list[str]:
             node = info.get(node_name, {})
             field = node.get("input", {}).get("required", {}).get(field_name)
             if not field or not isinstance(field, list) or len(field) == 0:
                 return []
             # Format: [["opt1", "opt2", ...]] — simple list in first element
             if isinstance(field[0], list):
-                return field[0]
+                return cast(list[str], field[0])
             # Format: ["COMBO", {"options": [...]}] — COMBO type with options dict
             if len(field) > 1 and isinstance(field[1], dict) and "options" in field[1]:
-                return field[1]["options"]
+                return cast(list[str], field[1]["options"])
             return []
 
         return {
@@ -788,7 +800,7 @@ async def get_comfy_models():
         }
 
 @app.get("/api/comfy-status")
-async def get_comfy_status():
+async def get_comfy_status() -> dict[str, str]:
     settings = load_settings()
     try:
         async with httpx.AsyncClient(timeout=1.0) as client:
@@ -802,25 +814,29 @@ async def get_comfy_status():
 app.mount("/images", StaticFiles(directory=STARTUP_IMG_DIR), name="images")
 
 # ── Thumbnail serving (lazy generation) ──────────────────────────────────────
+def _safe_child(root: Path | str, relative: str) -> Path:
+    """Resolve `relative` beneath `root`, rejecting any escape via `..` or symlinks."""
+    root_path = Path(root).resolve()
+    candidate = (root_path / relative).resolve()
+    if not candidate.is_relative_to(root_path):
+        raise HTTPException(status_code=404, detail="Image not found")
+    return candidate
+
+
 @app.get("/thumbnails/{path:path}")
-async def serve_thumbnail(path: str):
+async def serve_thumbnail(path: str) -> FileResponse:
     # Map thumbnail path to image path (thumb: .jpg → image: .png)
-    thumb_path = os.path.join(STARTUP_THUMB_DIR, path)
-    if os.path.exists(thumb_path):
+    thumb_path = _safe_child(STARTUP_THUMB_DIR, path)
+    if thumb_path.exists():
         return FileResponse(thumb_path)
 
     # Generate on demand from full image
-    img_path = os.path.join(STARTUP_IMG_DIR, os.path.splitext(path)[0] + ".png")
-    if not os.path.exists(img_path):
+    img_path = _safe_child(STARTUP_IMG_DIR, str(Path(path).with_suffix(".png")))
+    if not img_path.exists():
         raise HTTPException(status_code=404, detail="Image not found")
 
-    os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
     try:
-        img = Image.open(img_path)
-        img.thumbnail((400, 400))
-        if img.mode in ("RGBA", "P"):
-            img = img.convert("RGB")
-        img.save(thumb_path, "JPEG", quality=80)
+        render_thumbnail(img_path, thumb_path)
         return FileResponse(thumb_path)
     except Exception as e:
         print(f"Thumbnail gen error: {e}")
@@ -828,34 +844,55 @@ async def serve_thumbnail(path: str):
 
 # ── Dynamic Frontend HTML Loading ─────────────────────────────────────────────
 @app.get("/", response_class=HTMLResponse)
-def serve_frontend():
-    frontend_path = os.path.join(os.path.dirname(__file__), "frontend.html")
-    if os.path.exists(frontend_path):
-        with open(frontend_path, "r", encoding="utf-8") as f:
+def serve_frontend() -> HTMLResponse:
+    frontend_path = Path(__file__).with_name("frontend.html")
+    if frontend_path.exists():
+        with frontend_path.open("r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read())
     else:
         raise HTTPException(status_code=404, detail="frontend.html not found.")
 
 @app.get("/manifest.json")
-async def get_manifest():
-    manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
-    if os.path.exists(manifest_path):
+async def get_manifest() -> FileResponse:
+    manifest_path = Path(__file__).with_name("manifest.json")
+    if manifest_path.exists():
         return FileResponse(manifest_path, media_type="application/json")
     raise HTTPException(status_code=404, detail="manifest.json not found")
 
 @app.get("/sw.js")
-async def get_sw():
-    sw_path = os.path.join(os.path.dirname(__file__), "sw.js")
-    if os.path.exists(sw_path):
+async def get_sw() -> FileResponse:
+    sw_path = Path(__file__).with_name("sw.js")
+    if sw_path.exists():
         return FileResponse(sw_path, media_type="application/javascript")
     raise HTTPException(status_code=404, detail="sw.js not found")
 
 @app.get("/icon.svg")
-async def get_icon():
-    icon_path = os.path.join(os.path.dirname(__file__), "icon.svg")
-    if os.path.exists(icon_path):
+async def get_icon() -> FileResponse:
+    icon_path = Path(__file__).with_name("icon.svg")
+    if icon_path.exists():
         return FileResponse(icon_path, media_type="image/svg+xml")
     raise HTTPException(status_code=404, detail="icon.svg not found")
 
+def _parse_bind_args(default_host: str, default_port: int) -> tuple[str, int]:
+    """Read --host/--bind/--port from argv, falling back to the configured defaults."""
+    host, port = default_host, default_port
+    argv = sys.argv[1:]
+    for index, arg in enumerate(argv):
+        value = argv[index + 1] if index + 1 < len(argv) else ""
+        if arg in ("--host", "--bind") and value:
+            host = value
+        elif arg.startswith(("--host=", "--bind=")):
+            host = arg.split("=", 1)[1]
+        elif arg == "--port" and value:
+            port = int(value)
+        elif arg.startswith("--port="):
+            port = int(arg.split("=", 1)[1])
+    return host, port
+
+
 if __name__ == "__main__":
-    uvicorn.run("server:app", host="0.0.0.0", port=8888, reload=False)
+    # Binds to all interfaces by default so the gallery is reachable over the
+    # local network (Wi-Fi). Override via REIMAGINEX_HOST/REIMAGINEX_PORT or
+    # with --host/--bind and --port.
+    bind_host, bind_port = _parse_bind_args(startup_settings.host, startup_settings.port)
+    uvicorn.run("src.server:app", host=bind_host, port=bind_port, reload=False)

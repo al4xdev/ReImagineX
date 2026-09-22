@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Any
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -10,10 +11,10 @@ class Settings(BaseSettings):
     comfy_url: str = Field(default="http://127.0.0.1:8001", validation_alias="COMFY_URL")
     data_dir: str = Field(default="gallery_data", validation_alias="DATA_DIR")
     comfy_root: str = Field(default="", validation_alias="COMFY_ROOT")
-    openrouter_api_key: str = Field(
-        default="",
-        validation_alias="OPENROUTER_API_KEY"
-    )
+    openrouter_api_key: str = Field(default="", validation_alias="OPENROUTER_API_KEY")
+    # Network binding. 0.0.0.0 exposes the gallery on the local network (Wi-Fi).
+    host: str = Field(default="0.0.0.0", validation_alias="REIMAGINEX_HOST")
+    port: int = Field(default=8888, validation_alias="REIMAGINEX_PORT")
     
     # Dynamic settings (saved to/loaded from config.json)
     system_prompt: str = """You are a prompt normalizer for Qwen Image 2.1.
@@ -100,7 +101,6 @@ Rules:
     llm_provider: str = "deepseek"  # "deepseek" or "openrouter"
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-flash"
-    openrouter_api_key: str = ""
     openrouter_models: list[str] = [
         "deepseek/deepseek-v4-flash",
         "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
@@ -118,36 +118,53 @@ Rules:
 def get_config_path(data_dir: str) -> str:
     return os.path.join(data_dir, "config.json")
 
+# Checkpoint fields that must reference a Qwen model after the Qwen Image migration.
+_QWEN_CHECKPOINT_FIELDS: tuple[str, ...] = (
+    "diffusion_model_name",
+    "clip_model_name",
+    "vae_model_name",
+)
+
+# Marker identifying the pre-Qwen (Flux) default system prompt.
+_LEGACY_PROMPT_MARKER = "Flux"
+
+
+def _apply_persisted_settings(settings: Settings, data: dict[str, Any]) -> bool:
+    """Apply saved config values, migrating legacy pre-Qwen settings.
+
+    Returns True when migration changed something that must be written back.
+    """
+    dirty = False
+    for field, value in data.items():
+        if not hasattr(settings, field):
+            continue
+        if field in _QWEN_CHECKPOINT_FIELDS and "qwen" not in str(value).lower():
+            # Legacy checkpoint from before the Qwen migration: fall back to default.
+            value = getattr(settings, field)
+            dirty = True
+        elif field == "system_prompt" and _LEGACY_PROMPT_MARKER in str(value):
+            # Only the old Flux-era default prompt is upgraded; custom prompts survive.
+            value = settings.system_prompt
+            dirty = True
+        setattr(settings, field, value)
+
+    # Configs written before the DeepSeek provider existed need a refresh.
+    if not data.get("deepseek_api_key") or not data.get("llm_provider"):
+        dirty = True
+    return dirty
+
+
 def load_settings() -> Settings:
     settings = Settings()
     config_path = get_config_path(settings.data_dir)
     if os.path.exists(config_path):
         try:
             with open(config_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                dirty = False
-                for field, val in data.items():
-                    if hasattr(settings, field):
-                        # Reset invalid or outdated legacy checkpoints
-                        if field == "diffusion_model_name" and ("qwen" not in str(val).lower()):
-                            val = settings.diffusion_model_name
-                            dirty = True
-                        elif field == "clip_model_name" and ("qwen" not in str(val).lower()):
-                            val = settings.clip_model_name
-                            dirty = True
-                        elif field == "vae_model_name" and ("qwen" not in str(val).lower()):
-                            val = settings.vae_model_name
-                            dirty = True
-                        elif field == "system_prompt" and "Qwen" not in str(val):
-                            val = settings.system_prompt
-                            dirty = True
-                        setattr(settings, field, val)
-                if not data.get("deepseek_api_key"):
-                    dirty = True
-                if not data.get("llm_provider"):
-                    dirty = True
-                if dirty:
-                    save_settings(settings)
+                data: Any = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("config.json must contain a JSON object")
+            if _apply_persisted_settings(settings, data):
+                save_settings(settings)
         except Exception as e:
             print(f"Error loading {config_path}: {e}")
     return settings

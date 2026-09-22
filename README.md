@@ -1,6 +1,6 @@
 # ReImagineX ✦
 
-ReImagineX is a fluid, high-performance web gallery and image-to-image variations interface. Heavily inspired by the clean aesthetics and user interactions of Grok's (xAI) "Imagine" tool, it provides a seamless workflow to generate, iterate, upscale, and organize image lineages locally using a **ComfyUI** backend and **OpenRouter** LLM prompt refinement.
+ReImagineX is a fluid, high-performance web gallery and image-to-image variations interface. Heavily inspired by the clean aesthetics and user interactions of Grok's (xAI) "Imagine" tool, it provides a seamless workflow to generate, iterate, upscale, and organize image lineages locally using a **ComfyUI** backend and **DeepSeek** (with **OpenRouter** fallback) LLM prompt refinement.
 
 ---
 
@@ -24,11 +24,11 @@ ReImagineX is a fluid, high-performance web gallery and image-to-image variation
   - **Zoom-Fade Opening:** Opening/closing full images scales the viewport smoothly.
   - **Swipe Transitions:** Swiping left/right slides the old image out and the new image in dynamically.
 - **Direct Drawer Controls:**
-  - **Upscale (4x):** Performs a high-resolution workflow pass using the parent's base image.
+  - **Upscale (2MP):** Runs the prompt-based Qwen 2.1 upscale pass on the parent's base image, targeting 2 megapixels without external ESRGAN weights.
   - **Reprocess:** Resubmits the exact same configuration and prompt to generate a new variation.
 - **Bulk Select & Delete:** Delete multiple images at once, cascading recursively to all their lineage descendants.
 - **Auto-Cancellation on interrupt:** Deleting or canceling a pending generation sends a signal to ComfyUI to immediately cancel the job and clear the execution queue.
-- **Dynamic Configuration:** Adjust API keys, ComfyUI URLs, diffusion checkpoints, VAE, CLIP, and prompt expansion prompts on the fly via the built-in Settings Panel.
+- **Dynamic Configuration:** Adjust API keys, ComfyUI URLs, UNet/diffusion models, VAE, CLIP, and prompt expansion prompts on the fly via the built-in Settings Panel.
 
 ---
 
@@ -63,9 +63,20 @@ COMFY_URL=http://127.0.0.1:8001
 # Data directory for local images and state JSON
 DATA_DIR=gallery_data
 
-# OpenRouter API key (used for prompt expansion)
+# Network binding (0.0.0.0 exposes the gallery on your local network / Wi-Fi)
+REIMAGINEX_HOST=0.0.0.0
+REIMAGINEX_PORT=8888
+
+# LLM API keys (DeepSeek is the default provider, OpenRouter is the fallback)
+DEEPSEEK_API_KEY=your_api_key_here
 OPENROUTER_API_KEY=your_api_key_here
 ```
+
+> [!NOTE]
+> Settings saved from the Settings Panel are written to `DATA_DIR/config.json`,
+> which is applied after this file and therefore takes precedence once it
+> exists. Use the panel to change models/prompts after the first run; use `.env`
+> for the API keys and network binding.
 
 ### 4. Running the Web App
 
@@ -78,10 +89,13 @@ You can quickly boot the server by running the startup script:
 Alternatively, launch the local development web server manually:
 
 ```bash
-uv run python src/server.py
+uv run python -m src.server
 ```
 
-The application will be accessible at: `http://localhost:8888`
+The application will be accessible locally at `http://localhost:8888`. Because the
+server binds to `0.0.0.0` by default, it is also reachable from other devices on
+your network at `http://<your-lan-ip>:8888`. Set `REIMAGINEX_HOST=127.0.0.1` to
+restrict it to this machine, or pass `--host`/`--bind` and `--port` explicitly.
 
 ---
 
@@ -102,7 +116,7 @@ Ensure the following models are downloaded and placed in the respective folders 
 | `qwen_image_2.1_vae_bf16.safetensors` | `models/vae/` | VAE | Qwen Image 2.1 VAE |
 
 ### Generation & Upscaling Architecture
-1. **Qwen Image 2.1 Edit Workflow**: Uses native ComfyUI UNET/CLIP/VAE loaders alongside `QwenImage2_1Edit` and sampler nodes ([workflow_api.json](workflow_api.json)).
+1. **Qwen Image 2.1 Edit Workflow**: Uses native ComfyUI UNET/CLIP/VAE loaders alongside `TextEncodeQwenImage21`, `QwenImage21Cache` and sampler nodes ([workflow_api.json](workflow_api.json)).
 2. **Qwen 2.1 Prompt-Based 2MP Upscaler**: Uses [workflow_upscale_api.json](workflow_upscale_api.json) with high-detail prompt refinement to upscale existing images to 2 Megapixels without external ESRGAN weights.
 
 ---

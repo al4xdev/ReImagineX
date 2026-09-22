@@ -638,6 +638,9 @@
         <div>
           <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">DeepSeek API Key</label>
           <input type="password" id="cfgDeepSeekApiKey" placeholder="sk-..." style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
+          <label id="cfgDeepSeekApiKeyStatus" style="display:none;align-items:center;gap:6px;font-size:11px;color:#9ca3af;margin-top:5px;cursor:pointer;">
+            <input type="checkbox" id="cfgClearDeepSeekApiKey" style="width:auto;cursor:pointer;"> Clear stored key
+          </label>
         </div>
         <div>
           <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">DeepSeek Model</label>
@@ -647,7 +650,10 @@
 
       <div>
         <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">OpenRouter API Key</label>
-        <input type="password" id="cfgApiKey" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
+        <input type="password" id="cfgApiKey" placeholder="sk-or-..." style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;">
+        <label id="cfgApiKeyStatus" style="display:none;align-items:center;gap:6px;font-size:11px;color:#9ca3af;margin-top:5px;cursor:pointer;">
+          <input type="checkbox" id="cfgClearOpenRouterApiKey" style="width:auto;cursor:pointer;"> Clear stored key
+        </label>
       </div>
 
       <div>
@@ -660,7 +666,7 @@
         <textarea id="cfgSystemPrompt" rows="5" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:12px;resize:none;outline:none;line-height:1.4;"></textarea>
       </div>
 
-      <div style="display:grid;grid-template-cols: 1fr 1fr;gap:10px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
         <div>
           <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Diffusion Model</label>
           <select id="cfgDiffusionModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
@@ -2089,11 +2095,23 @@ async function openConfigModal() {
   document.getElementById('cfgComfyUrl').value = cfg.comfy_url || '';
   document.getElementById('cfgComfyRoot').value = cfg.comfy_root || '';
   document.getElementById('cfgLlmProvider').value = cfg.llm_provider || 'deepseek';
-  document.getElementById('cfgDeepSeekApiKey').value = cfg.deepseek_api_key || '';
   document.getElementById('cfgDeepSeekModel').value = cfg.deepseek_model || 'deepseek-flash';
-  document.getElementById('cfgApiKey').value = cfg.openrouter_api_key || '';
   document.getElementById('cfgOpenRouterModels').value = (cfg.openrouter_models || []).join('\n');
   document.getElementById('cfgSystemPrompt').value = cfg.system_prompt || '';
+
+  // Secrets are write-only: the API never returns them. Show whether one is
+  // stored and let the user type a replacement or tick "Clear stored key".
+  const deepseekKeyInput = document.getElementById('cfgDeepSeekApiKey');
+  deepseekKeyInput.value = '';
+  deepseekKeyInput.placeholder = cfg.deepseek_configured ? '•••••••• (key stored)' : 'sk-...';
+  document.getElementById('cfgDeepSeekApiKeyStatus').style.display = cfg.deepseek_configured ? 'flex' : 'none';
+  document.getElementById('cfgClearDeepSeekApiKey').checked = false;
+
+  const openrouterKeyInput = document.getElementById('cfgApiKey');
+  openrouterKeyInput.value = '';
+  openrouterKeyInput.placeholder = cfg.openrouter_configured ? '•••••••• (key stored)' : 'sk-or-...';
+  document.getElementById('cfgApiKeyStatus').style.display = cfg.openrouter_configured ? 'flex' : 'none';
+  document.getElementById('cfgClearOpenRouterApiKey').checked = false;
 
   // Model selects — use fetched models or fall back to saved value
   if (comfyModels) {
@@ -2144,9 +2162,11 @@ async function saveConfig() {
       body: JSON.stringify({
         system_prompt: systemPrompt,
         llm_provider: llmProvider,
-        deepseek_api_key: deepseekApiKey,
+        deepseek_api_key: deepseekApiKey || null,
         deepseek_model: deepseekModel,
-        openrouter_api_key: apiKey,
+        openrouter_api_key: apiKey || null,
+        clear_deepseek_api_key: document.getElementById('cfgClearDeepSeekApiKey').checked,
+        clear_openrouter_api_key: document.getElementById('cfgClearOpenRouterApiKey').checked,
         openrouter_models: openRouterModels,
         diffusion_model_name: diffusionModel,
         clip_model_name: clipModel,
@@ -2391,7 +2411,12 @@ async function reprocessCurrent() {
       body: JSON.stringify({ 
         base_id: item.parent_id, 
         prompt: item.prompt,
-        bypass_llm: true
+        bypass_llm: true,
+        // Resubmit the exact same configuration, not just the prompt.
+        additional_images: item.additional_images || [],
+        custom_size: item.custom_size !== undefined ? item.custom_size : true,
+        aspect_ratio: item.aspect_ratio || '1:1 (Square)',
+        megapixels: item.megapixels !== undefined ? item.megapixels : 0.5
       })
     });
     if (!res.ok) {
@@ -2424,8 +2449,14 @@ async function retrySingleFailed(item) {
 
     const payload = {
       base_id: item.parent_id || item.id,
-      prompt: item.prompt_original || item.prompt,
-      bypass_llm: true
+      // item.prompt is the already-expanded prompt that was actually sent to
+      // the backend; bypass_llm means it must be reused verbatim.
+      prompt: item.prompt || item.prompt_original,
+      bypass_llm: true,
+      additional_images: item.additional_images || [],
+      custom_size: item.custom_size !== undefined ? item.custom_size : true,
+      aspect_ratio: item.aspect_ratio || '1:1 (Square)',
+      megapixels: item.megapixels !== undefined ? item.megapixels : 0.5
     };
 
     const res = await fetch('/api/generate', {

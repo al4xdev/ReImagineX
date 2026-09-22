@@ -1,10 +1,18 @@
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 
-from src.server import ConfigSchema, _safe_child, get_config, get_ws_url, update_config
+from src.server import (
+    ConfigSchema,
+    _first_image_batch,
+    _safe_child,
+    get_config,
+    get_ws_url,
+    update_config,
+)
 
 
 def test_websocket_url_uses_matching_transport() -> None:
@@ -45,3 +53,49 @@ def test_blank_key_update_preserves_existing_secret(tmp_path: Path, monkeypatch)
 
     saved = (tmp_path / "config.json").read_text(encoding="utf-8")
     assert "server-secret" in saved
+
+
+def test_clear_flag_removes_stored_secret(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "server-secret")
+    current = asyncio.run(get_config())
+    request = ConfigSchema(**current, clear_openrouter_api_key=True)
+
+    asyncio.run(update_config(request))
+
+    saved = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert saved["openrouter_api_key"] == ""
+    assert asyncio.run(get_config())["openrouter_configured"] is False
+
+
+def test_new_key_replaces_stored_secret(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "server-secret")
+    current = asyncio.run(get_config())
+    request = ConfigSchema(**current, openrouter_api_key="fresh-key")
+
+    asyncio.run(update_config(request))
+
+    saved = json.loads((tmp_path / "config.json").read_text(encoding="utf-8"))
+    assert saved["openrouter_api_key"] == "fresh-key"
+
+
+def test_first_image_batch_reads_flat_executed_payload() -> None:
+    payload = {"images": [{"filename": "a.png", "subfolder": "", "type": "output"}]}
+
+    assert _first_image_batch(payload) == payload["images"]
+
+
+def test_first_image_batch_reads_per_node_history_payload() -> None:
+    images = [{"filename": "b.png", "subfolder": "", "type": "output"}]
+    payload = {"459:474": {"text": ["..."]}, "461": {"images": images}}
+
+    assert _first_image_batch(payload) == images
+
+
+def test_first_image_batch_prefers_flat_and_ignores_empty_batches() -> None:
+    images = [{"filename": "c.png", "subfolder": "s", "type": "temp"}]
+
+    assert _first_image_batch({"461": {"images": []}, "images": images}) == images
+    assert _first_image_batch({"461": {"images": []}, "3": {"text": ["x"]}}) is None
+    assert _first_image_batch({}) is None

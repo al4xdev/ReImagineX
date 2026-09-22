@@ -7,6 +7,9 @@ services:
       - "8888:8888"
     environment:
       COMFY_URL: http://host.docker.internal:8001
+      # Forward the host .env secrets; "-" keeps compose working when unset.
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
     volumes:
       - reimaginex-data:/app/gallery_data
     extra_hosts:

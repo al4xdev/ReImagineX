@@ -1,42 +1,54 @@
 import copy
 import json
 import math
-import os
+from pathlib import Path
+from typing import Any
+
+Workflow = dict[str, Any]
 
 
 def calculate_resolution(w: int, h: int, mp: float = 2.0, multiple: int = 32) -> tuple[int, int]:
+    if w <= 0 or h <= 0:
+        raise ValueError(f"Image dimensions must be positive, got {w}x{h}")
     scale = math.sqrt((mp * 1_000_000) / (w * h))
-    new_w = round(w * scale / multiple) * multiple
-    new_h = round(h * scale / multiple) * multiple
+    # Clamp to one `multiple` step: extreme aspect ratios would otherwise round
+    # a dimension down to 0 and produce an invalid latent size.
+    new_w = max(multiple, round(w * scale / multiple) * multiple)
+    new_h = max(multiple, round(h * scale / multiple) * multiple)
     return new_w, new_h
 
 
-def _load_workflow_base() -> dict:
-    json_path = os.path.join(os.path.dirname(__file__), "..", "workflow_api.json")
-    with open(json_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def _load_workflow_json(filename: str) -> Workflow:
+    json_path = Path(__file__).resolve().parent.parent / filename
+    with json_path.open("r", encoding="utf-8") as handle:
+        value = json.load(handle)
+    if not isinstance(value, dict):
+        raise ValueError(f"{filename} must contain a JSON object")
+    return value
 
 
-_WORKFLOW_CACHE: dict | None = None
+def _load_workflow_base() -> Workflow:
+    return _load_workflow_json("workflow_api.json")
 
 
-def _get_workflow_base() -> dict:
+_WORKFLOW_CACHE: Workflow | None = None
+
+
+def _get_workflow_base() -> Workflow:
     global _WORKFLOW_CACHE
     if _WORKFLOW_CACHE is None:
         _WORKFLOW_CACHE = _load_workflow_base()
     return _WORKFLOW_CACHE
 
 
-def _load_upscale_workflow_base() -> dict:
-    json_path = os.path.join(os.path.dirname(__file__), "..", "workflow_upscale_api.json")
-    with open(json_path, "r", encoding="utf-8") as f:
-        return json.load(f)
+def _load_upscale_workflow_base() -> Workflow:
+    return _load_workflow_json("workflow_upscale_api.json")
 
 
-_UPSCALE_WORKFLOW_CACHE: dict | None = None
+_UPSCALE_WORKFLOW_CACHE: Workflow | None = None
 
 
-def _get_upscale_workflow_base() -> dict:
+def _get_upscale_workflow_base() -> Workflow:
     global _UPSCALE_WORKFLOW_CACHE
     if _UPSCALE_WORKFLOW_CACHE is None:
         _UPSCALE_WORKFLOW_CACHE = _load_upscale_workflow_base()
@@ -57,7 +69,7 @@ def build_generation_workflow(
     diffusion_model_name: str = "qwen_image_2.1_int8_convrot.safetensors",
     clip_model_name: str = "qwen3vl_8b_int8_convrot.safetensors",
     vae_model_name: str = "qwen_image_2.1_vae_bf16.safetensors",
-) -> dict:
+) -> Workflow:
     wf = copy.deepcopy(_get_workflow_base())
 
     # 1. Models
@@ -124,7 +136,7 @@ def build_upscale_workflow(
     diffusion_model_name: str = "qwen_image_2.1_int8_convrot.safetensors",
     clip_model_name: str = "qwen3vl_8b_int8_convrot.safetensors",
     vae_model_name: str = "qwen_image_2.1_vae_bf16.safetensors",
-) -> dict:
+) -> Workflow:
     wf = copy.deepcopy(_get_upscale_workflow_base())
 
     # 1. Models
