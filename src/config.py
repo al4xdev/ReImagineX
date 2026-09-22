@@ -1,7 +1,9 @@
-import os
 import json
-from pydantic_settings import BaseSettings, SettingsConfigDict
+import os
+
 from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
 
 class Settings(BaseSettings):
     # Core system settings (can be overridden via env)

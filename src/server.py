@@ -1,23 +1,23 @@
+import asyncio
+import json
 import os
 import uuid
-import copy
-import asyncio
+from contextlib import asynccontextmanager
+from typing import Optional
+
 import httpx
 import uvicorn
 import websockets
-import json
-from contextlib import asynccontextmanager
-from typing import Optional
+from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from PIL import Image
 from pydantic import BaseModel, Field
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 
 # Modularized Imports
 from config import load_settings, save_settings
-from state_manager import load_state, save_state, state_lock, _load, _save, delete_item_reparent
+from state_manager import _load, _save, delete_item_reparent, load_state, state_lock
 from workflow import build_generation_workflow, build_upscale_workflow
 
 # ── Configurations & Initial State ───────────────────────────────────────────
@@ -221,6 +221,7 @@ async def check_comfy_queue():
                         pid = item["prompt_id"]
                         if pid in history:
                             img_data = None
+                            outputs = history[pid].get("outputs", {})
                             for nid in ("461", "3"):
                                 if nid in outputs and isinstance(outputs[nid], dict) and "images" in outputs[nid] and outputs[nid]["images"]:
                                     img_data = outputs[nid]["images"][0]
@@ -687,7 +688,7 @@ async def delete_items(req: DeleteRequest):
                     if os.path.exists(file_path):
                         try:
                             os.remove(file_path)
-                        except:
+                        except OSError:
                             pass
             
             # 3. Remove the directory of descendants associated with this item ID
@@ -696,7 +697,7 @@ async def delete_items(req: DeleteRequest):
                 import shutil
                 try:
                     shutil.rmtree(dir_path, ignore_errors=True)
-                except:
+                except OSError:
                     pass
                 
     return {"status": "ok", "deleted_count": len(all_removed_ids)}
