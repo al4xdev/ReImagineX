@@ -25,7 +25,7 @@ ReImagineX is a fluid, high-performance web gallery and image-to-image variation
   - **Swipe Transitions:** Swiping left/right slides the old image out and the new image in dynamically.
 - **Direct Drawer Controls:**
   - **Upscale (2MP):** Runs the prompt-based Qwen 2.1 upscale pass on the parent's base image, targeting 2 megapixels without external ESRGAN weights.
-  - **Reprocess:** Resubmits the exact same configuration and prompt to generate a new variation.
+  - **Reprocess:** Reuses the prompt, reference images, and size with a new random seed to generate a variation.
 - **Bulk Select & Delete:** Delete multiple images at once, cascading recursively to all their lineage descendants.
 - **Auto-Cancellation on interrupt:** Deleting or canceling a pending generation sends a signal to ComfyUI to immediately cancel the job and clear the execution queue.
 - **Dynamic Configuration:** Adjust API keys, ComfyUI URLs, UNet/diffusion models, VAE, CLIP, and prompt expansion prompts on the fly via the built-in Settings Panel.

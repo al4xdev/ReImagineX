@@ -2377,7 +2377,7 @@ function showCardActionsOverlay(card, item) {
   document.addEventListener('touchstart', outsideTapHandler, { passive: true });
 }
 
-async function triggerUpscale(itemId, seed = null) {
+async function triggerUpscale(itemId) {
   const item = galleryItems.find(i => i.id === itemId);
   if (item && item.status === 'completed' && (item.upscaled === true || (item.megapixels && item.megapixels >= 2.0))) {
     showToast('This image is already at maximum resolution (2MP).');
@@ -2388,7 +2388,7 @@ async function triggerUpscale(itemId, seed = null) {
     const res = await fetch('/api/upscale', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_id: itemId, seed: seed })
+      body: JSON.stringify({ item_id: itemId })
     });
     if (res.ok) {
       showToast('Upscale requested successfully!');
@@ -2445,7 +2445,7 @@ async function reprocessCurrent() {
 
   if (item.upscaled) {
     closeImageModal();
-    await triggerUpscale(item.parent_id || item.id, item.seed);
+    await triggerUpscale(item.parent_id || item.id);
     return;
   }
 
@@ -2473,9 +2473,8 @@ async function reprocessCurrent() {
         base_id: item.parent_id, 
         prompt: item.prompt,
         bypass_llm: true,
-        seed: item.seed,
         original_prompt: item.prompt_original,
-        // Resubmit the exact same configuration, not just the prompt.
+        // Reuse the prompt, references, and size; the server draws a new seed.
         additional_images: item.additional_images || [],
         custom_size: item.custom_size !== undefined ? item.custom_size : true,
         aspect_ratio: item.aspect_ratio || '1:1 (Square)',
@@ -2506,7 +2505,7 @@ async function retrySingleFailed(item) {
   if (!item) return;
   try {
     if (item.upscaled) {
-      await triggerUpscale(item.parent_id || item.id, item.seed);
+      await triggerUpscale(item.parent_id || item.id);
       return;
     }
 
@@ -2516,7 +2515,6 @@ async function retrySingleFailed(item) {
       // the backend; bypass_llm means it must be reused verbatim.
       prompt: item.prompt || item.prompt_original,
       bypass_llm: true,
-      seed: item.seed,
       original_prompt: item.prompt_original,
       additional_images: item.additional_images || [],
       custom_size: item.custom_size !== undefined ? item.custom_size : true,
