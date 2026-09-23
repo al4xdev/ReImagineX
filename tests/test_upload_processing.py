@@ -7,7 +7,7 @@ import pytest
 from PIL import Image
 
 from src.server import prepare_uploaded_image
-from src.upload_processing import MAX_UPLOAD_PIXELS, build_downscale_workflow
+from src.upload_processing import MAX_UPLOAD_PIXELS, build_downscale_workflow, downscale_dimensions
 
 
 def png_bytes(width: int, height: int) -> bytes:
@@ -17,14 +17,23 @@ def png_bytes(width: int, height: int) -> bytes:
 
 
 def test_downscale_workflow_uses_uploaded_image_and_is_independent() -> None:
-    first = build_downscale_workflow("first.png")
+    first = build_downscale_workflow("first.png", 1800, 1200)
     first["load"]["inputs"]["image"] = "changed.png"
-    second = build_downscale_workflow("second.png")
+    second = build_downscale_workflow("second.png", 1800, 1200)
 
     assert second["load"]["inputs"]["image"] == "second.png"
-    assert second["scale"]["class_type"] == "ImageScaleToTotalPixels"
-    assert second["scale"]["inputs"]["megapixels"] < 2.0
+    assert second["scale"]["class_type"] == "ImageScale"
+    assert second["scale"]["inputs"]["width"] * second["scale"]["inputs"]["height"] <= MAX_UPLOAD_PIXELS
+    assert second["scale"]["inputs"]["crop"] == "disabled"
     assert second["save"]["inputs"]["images"] == ["scale", 0]
+
+
+def test_downscale_dimensions_use_decimal_two_megapixel_limit() -> None:
+    assert downscale_dimensions(1000, 1000) == (1000, 1000)
+    for original_width, original_height in [(1076, 1939), (1900, 3424)]:
+        width, height = downscale_dimensions(original_width, original_height)
+        assert width * height <= MAX_UPLOAD_PIXELS
+        assert width < original_width and height < original_height
 
 
 def test_small_jpeg_upload_is_saved_as_png_without_downscale(
@@ -113,5 +122,5 @@ def test_large_upload_runs_comfy_downscale_and_stores_result(
     assert result == "input-reduced.png"
     assert uploaded == ["large.png", "root/large.png"]
     assert submitted[0]["load"]["inputs"]["image"] == "input-large.png"
-    assert submitted[0]["scale"]["inputs"]["megapixels"] == 1.99
+    assert submitted[0]["scale"]["inputs"]["width"] * submitted[0]["scale"]["inputs"]["height"] <= MAX_UPLOAD_PIXELS
     assert filepath.read_bytes() == reduced

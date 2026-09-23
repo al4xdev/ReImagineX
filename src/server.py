@@ -113,6 +113,7 @@ async def prepare_uploaded_image(
     """Keep uploaded images at or below 2 MP before they enter the gallery."""
     try:
         with Image.open(BytesIO(data)) as image:
+            width, height = image.size
             pixels = image.width * image.height
             if pixels <= MAX_UPLOAD_PIXELS and image.format != "PNG":
                 oriented = ImageOps.exif_transpose(image)
@@ -130,7 +131,7 @@ async def prepare_uploaded_image(
 
     settings = load_settings()
     source_name = await upload_bytes_to_comfy(data, source_filename, content_type)
-    workflow = build_downscale_workflow(source_name)
+    workflow = build_downscale_workflow(source_name, width, height)
     async with httpx.AsyncClient(timeout=10.0) as client:
         submitted = await client.post(f"{settings.comfy_url}/prompt", json={"prompt": workflow, "client_id": CLIENT_ID})
         submitted.raise_for_status()
