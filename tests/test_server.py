@@ -1,6 +1,7 @@
 import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -12,6 +13,7 @@ from src.server import (
     _clean_llm_response,
     _first_image_batch,
     _safe_child,
+    expand_prompt_deepseek,
     generate,
     get_config,
     get_state,
@@ -145,6 +147,42 @@ def test_clean_llm_response_strips_code_fences_and_whitespace() -> None:
     assert _clean_llm_response("```\nA scenic sunset\n```") == "A scenic sunset"
     assert _clean_llm_response("```markdown\nA scenic sunset\n```") == "A scenic sunset"
     assert _clean_llm_response("  A clean prompt  ") == "A clean prompt"
+
+
+def test_deepseek_prompt_expansion_disables_reasoning_and_uses_temperature_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payloads: list[dict[str, Any]] = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self) -> dict[str, Any]:
+            return {"choices": [{"message": {"content": "expanded prompt"}}]}
+
+    class FakeClient:
+        def __init__(self, **_kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *_args: Any) -> None:
+            pass
+
+        async def post(self, _url: str, **kwargs: Any) -> FakeResponse:
+            payloads.append(kwargs["json"])
+            return FakeResponse()
+
+    monkeypatch.setattr(
+        "src.server.load_settings",
+        lambda: SimpleNamespace(deepseek_api_key="test-key", deepseek_model="deepseek-flash", system_prompt="Normalize"),
+    )
+    monkeypatch.setattr("src.server.httpx.AsyncClient", FakeClient)
+
+    assert asyncio.run(expand_prompt_deepseek("original prompt")) == "expanded prompt"
+    assert payloads[0]["temperature"] == 1.0
+    assert payloads[0]["reasoning_effort"] == "none"
 
 
 def test_album_keeps_root_first_and_other_images_newest_first(monkeypatch: pytest.MonkeyPatch) -> None:

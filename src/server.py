@@ -526,8 +526,8 @@ async def expand_prompt_deepseek(user_prompt: str) -> Optional[str]:
                         {"role": "system", "content": settings.system_prompt},
                         {"role": "user", "content": user_prompt}
                     ],
-                    "temperature": 0.5,
-                    "reasoning_effort": "low",
+                    "temperature": 1.0,
+                    "reasoning_effort": "none",
                 }
             )
             if res.status_code == 200:
