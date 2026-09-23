@@ -55,6 +55,9 @@ def _get_upscale_workflow_base() -> Workflow:
     return _UPSCALE_WORKFLOW_CACHE
 
 
+DEFAULT_SAGE_ATTENTION = "sageattn3"
+
+
 def build_generation_workflow(
     prompt: str,
     base_image_comfy_name: str,
@@ -69,6 +72,7 @@ def build_generation_workflow(
     diffusion_model_name: str = "qwen_image_2.1_int8_convrot.safetensors",
     clip_model_name: str = "qwen3vl_8b_int8_convrot.safetensors",
     vae_model_name: str = "qwen_image_2.1_vae_bf16.safetensors",
+    sage_attention: str = DEFAULT_SAGE_ATTENTION,
 ) -> Workflow:
     wf = copy.deepcopy(_get_workflow_base())
 
@@ -80,7 +84,16 @@ def build_generation_workflow(
     if "459:454" in wf and "vae_name" in wf["459:454"]["inputs"]:
         wf["459:454"]["inputs"]["vae_name"] = vae_model_name
 
-    # 2. Text Prompt & Seed
+    # 2. SageAttention
+    if "459:476" in wf:
+        if sage_attention and sage_attention != "disabled":
+            wf["459:476"]["inputs"]["sage_attention"] = sage_attention
+        else:
+            if "459:469" in wf:
+                wf["459:469"]["inputs"]["model"] = ["459:451", 0]
+            del wf["459:476"]
+
+    # 3. Text Prompt & Seed
     if "459:474" in wf:
         wf["459:474"]["inputs"]["prompt"] = prompt
     if "459:458" in wf:
@@ -89,13 +102,13 @@ def build_generation_workflow(
         wf["459:458"]["inputs"]["cfg"] = cfg
         wf["459:458"]["inputs"]["denoise"] = denoise
 
-    # 3. Base Image (image 1)
+    # 4. Base Image (image 1)
     if "470" in wf:
         wf["470"]["inputs"]["image"] = base_image_comfy_name
     if "459:474" in wf:
         wf["459:474"]["inputs"]["images.image_1"] = ["470", 0]
 
-    # 4. Additional Reference Images (images 2..10)
+    # 5. Additional Reference Images (images 2..10)
     if "459:474" in wf:
         text_node_inputs = wf["459:474"]["inputs"]
         for k in list(text_node_inputs.keys()):
@@ -113,7 +126,7 @@ def build_generation_workflow(
             if "459:474" in wf:
                 wf["459:474"]["inputs"][f"images.image_{idx}"] = [node_id, 0]
 
-    # 5. Custom Size / Aspect Ratio Switch
+    # 6. Custom Size / Aspect Ratio Switch
     if "459:468" in wf:
         wf["459:468"]["inputs"]["switch"] = bool(custom_size)
     if custom_size and "13" in wf:
@@ -147,6 +160,7 @@ def build_upscale_workflow(
     vae_model_name: str = "qwen_image_2.1_vae_bf16.safetensors",
     lora_name: str = DEFAULT_UPSCALE_LORA,
     lora_strength: float = DEFAULT_UPSCALE_LORA_STRENGTH,
+    sage_attention: str = DEFAULT_SAGE_ATTENTION,
     prompt: str = DEFAULT_UPSCALE_PROMPT,
 ) -> Workflow:
     wf = copy.deepcopy(_get_upscale_workflow_base())
@@ -159,20 +173,34 @@ def build_upscale_workflow(
     if "459:454" in wf and "vae_name" in wf["459:454"]["inputs"]:
         wf["459:454"]["inputs"]["vae_name"] = vae_model_name
 
-    # 2. LoRA
+    # 2. LoRA & SageAttention model routing
+    model_source = ["459:451", 0]
     if "459:475" in wf:
         if lora_name and lora_strength != 0.0:
             wf["459:475"]["inputs"]["lora_name"] = lora_name
             wf["459:475"]["inputs"]["strength_model"] = lora_strength
             if "strength_clip" in wf["459:475"]["inputs"]:
                 wf["459:475"]["inputs"]["strength_clip"] = lora_strength
+            model_source = ["459:475", 0]
         else:
-            # Bypass LoRA: reconnect cache directly to unet and text encode to clip
-            if "459:469" in wf:
-                wf["459:469"]["inputs"]["model"] = ["459:451", 0]
+            # Bypass LoRA: reconnect text encode clip directly to clip loader
             if "459:474" in wf:
                 wf["459:474"]["inputs"]["clip"] = ["459:453", 0]
             del wf["459:475"]
+
+    if "459:476" in wf:
+        if sage_attention and sage_attention != "disabled":
+            wf["459:476"]["inputs"]["model"] = model_source
+            wf["459:476"]["inputs"]["sage_attention"] = sage_attention
+            if "459:469" in wf:
+                wf["459:469"]["inputs"]["model"] = ["459:476", 0]
+        else:
+            # Bypass SageAttention: connect cache directly to model_source
+            if "459:469" in wf:
+                wf["459:469"]["inputs"]["model"] = model_source
+            del wf["459:476"]
+    elif "459:469" in wf:
+        wf["459:469"]["inputs"]["model"] = model_source
 
     # 3. Base Image & Prompt
     if "470" in wf:

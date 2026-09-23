@@ -4,6 +4,7 @@ from typing import Any
 import pytest
 
 from src.workflow import (
+    DEFAULT_SAGE_ATTENTION,
     DEFAULT_UPSCALE_LORA,
     DEFAULT_UPSCALE_LORA_STRENGTH,
     DEFAULT_UPSCALE_PROMPT,
@@ -28,6 +29,7 @@ SWITCH_NODE = "459:468"  # ComfySwitchNode
 SELECTOR_NODE = "13"  # ResolutionSelector
 BASE_IMAGE_NODE = "470"  # LoadImage
 LORA_NODE = "459:475"  # LoraLoader
+SAGE_NODE = "459:476"  # PathchSageAttentionKJ
 CACHE_NODE = "459:469"  # QwenImage21Cache
 
 
@@ -235,14 +237,18 @@ def test_upscale_workflow_sets_target_resolution_and_latent_switch(
     assert workflow[CLIP_NODE]["inputs"]["clip_name"] == "c.safetensors"
     assert workflow[VAE_NODE]["inputs"]["vae_name"] == "v.safetensors"
 
-    # LoRA injection defaults
+    # LoRA & SageAttention injection defaults
     assert workflow[LORA_NODE]["class_type"] == "LoraLoader"
     assert workflow[LORA_NODE]["inputs"]["lora_name"] == DEFAULT_UPSCALE_LORA
     assert workflow[LORA_NODE]["inputs"]["strength_model"] == DEFAULT_UPSCALE_LORA_STRENGTH
     assert workflow[LORA_NODE]["inputs"]["strength_clip"] == DEFAULT_UPSCALE_LORA_STRENGTH
     assert workflow[LORA_NODE]["inputs"]["model"] == [UNET_NODE, 0]
     assert workflow[LORA_NODE]["inputs"]["clip"] == [CLIP_NODE, 0]
-    assert workflow[CACHE_NODE]["inputs"]["model"] == [LORA_NODE, 0]
+
+    assert workflow[SAGE_NODE]["class_type"] == "PathchSageAttentionKJ"
+    assert workflow[SAGE_NODE]["inputs"]["model"] == [LORA_NODE, 0]
+    assert workflow[SAGE_NODE]["inputs"]["sage_attention"] == DEFAULT_SAGE_ATTENTION
+    assert workflow[CACHE_NODE]["inputs"]["model"] == [SAGE_NODE, 0]
     assert workflow[PROMPT_NODE]["inputs"]["clip"] == [LORA_NODE, 1]
 
 
@@ -261,9 +267,11 @@ def test_upscale_workflow_custom_lora_and_prompt() -> None:
     assert workflow[LORA_NODE]["inputs"]["strength_model"] == -2.5
     assert workflow[LORA_NODE]["inputs"]["strength_clip"] == -2.5
     assert workflow[PROMPT_NODE]["inputs"]["prompt"] == "Custom high resolution restoration prompt"
+    assert workflow[SAGE_NODE]["inputs"]["model"] == [LORA_NODE, 0]
+    assert workflow[CACHE_NODE]["inputs"]["model"] == [SAGE_NODE, 0]
 
 
-def test_upscale_workflow_bypasses_lora_when_strength_zero() -> None:
+def test_upscale_workflow_bypasses_lora_keeps_sage() -> None:
     workflow = build_upscale_workflow(
         base_image_comfy_name="bypass.png",
         original_width=512,
@@ -273,8 +281,38 @@ def test_upscale_workflow_bypasses_lora_when_strength_zero() -> None:
     )
 
     assert LORA_NODE not in workflow
-    assert workflow[CACHE_NODE]["inputs"]["model"] == [UNET_NODE, 0]
+    assert workflow[SAGE_NODE]["inputs"]["model"] == [UNET_NODE, 0]
+    assert workflow[CACHE_NODE]["inputs"]["model"] == [SAGE_NODE, 0]
     assert workflow[PROMPT_NODE]["inputs"]["clip"] == [CLIP_NODE, 0]
+
+
+def test_upscale_workflow_bypasses_sage_when_disabled() -> None:
+    workflow = build_upscale_workflow(
+        base_image_comfy_name="bypass_sage.png",
+        original_width=512,
+        original_height=512,
+        seed=1,
+        sage_attention="disabled",
+    )
+
+    assert SAGE_NODE not in workflow
+    assert workflow[CACHE_NODE]["inputs"]["model"] == [LORA_NODE, 0]
+
+
+def test_generation_workflow_injects_sage_attention() -> None:
+    workflow = _build_generation()
+
+    assert workflow[SAGE_NODE]["class_type"] == "PathchSageAttentionKJ"
+    assert workflow[SAGE_NODE]["inputs"]["model"] == [UNET_NODE, 0]
+    assert workflow[SAGE_NODE]["inputs"]["sage_attention"] == "sageattn3"
+    assert workflow[CACHE_NODE]["inputs"]["model"] == [SAGE_NODE, 0]
+
+
+def test_generation_workflow_bypasses_sage_when_disabled() -> None:
+    workflow = _build_generation(sage_attention="disabled")
+
+    assert SAGE_NODE not in workflow
+    assert workflow[CACHE_NODE]["inputs"]["model"] == [UNET_NODE, 0]
 
 
 def test_upscale_workflow_tracks_non_square_original_aspect_ratio() -> None:

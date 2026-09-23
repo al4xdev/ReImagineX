@@ -150,7 +150,7 @@
       "device": "auto",
       "dtype": "default",
       "model": [
-        "459:451",
+        "459:476",
         0
       ]
     },
@@ -180,6 +180,20 @@
     "class_type": "TextEncodeQwenImage21",
     "_meta": {
       "title": "Text Encode Qwen Image 2.1"
+    }
+  },
+  "459:476": {
+    "inputs": {
+      "model": [
+        "459:451",
+        0
+      ],
+      "sage_attention": "sageattn3",
+      "allow_compile": false
+    },
+    "class_type": "PathchSageAttentionKJ",
+    "_meta": {
+      "title": "Patch Sage Attention KJ"
     }
   }
 }
