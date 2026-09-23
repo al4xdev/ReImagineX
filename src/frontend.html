@@ -498,6 +498,10 @@
         </div>
         <p id="viewFullPrompt" style="font-size:12px;color:rgba(255,255,255,0.95);user-select:text;word-break:break-word;line-height:1.4;" title="Click to copy full prompt"></p>
       </div>
+      <div id="upscalePromptWrapper" style="display:none;">
+        <p style="font-size:10px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:0.05em;font-weight:700;">Upscale processing prompt</p>
+        <p id="viewUpscalePrompt" style="font-size:12px;color:rgba(255,255,255,0.7);user-select:text;word-break:break-word;line-height:1.4;cursor:pointer;" title="Click to copy full upscale prompt"></p>
+      </div>
     </div>
   </div>
 </div>
@@ -710,6 +714,8 @@ let currentOffset   = 0;
 const pageLimit     = 20;
 let hasMore         = true;
 let isLoadingMore   = false;
+let viewVersion     = 0;
+let firstPageRequest = 0;
 
 // Bulk Selection
 let isSelectionMode = false;
@@ -722,6 +728,7 @@ const configModal   = document.getElementById('configModal');
 const viewImage     = document.getElementById('viewFullImage');
 const viewPrompt    = document.getElementById('viewFullPrompt');
 const viewOriginalPrompt = document.getElementById('viewOriginalPrompt');
+const viewUpscalePrompt = document.getElementById('viewUpscalePrompt');
 const originalPromptWrapper = document.getElementById('originalPromptWrapper');
 const txtPromptFinalTitle = document.getElementById('txtPromptFinalTitle');
 const modalCounter  = document.getElementById('modalCounter');
@@ -857,6 +864,10 @@ viewOriginalPrompt.addEventListener('click', () => {
   copyTextToClipboard(viewOriginalPrompt.dataset.fullPrompt || viewOriginalPrompt.textContent, 'Original prompt copied to clipboard!');
 });
 
+viewUpscalePrompt.addEventListener('click', () => {
+  copyTextToClipboard(viewUpscalePrompt.dataset.fullPrompt || viewUpscalePrompt.textContent, 'Upscale prompt copied to clipboard!');
+});
+
 function showToast(message) {
   const existing = document.querySelector('.toast-notification');
   if (existing) existing.remove();
@@ -923,6 +934,7 @@ function buildApiUrl(limit, offset) {
 }
 
 function resetView() {
+  viewVersion++;
   galleryItems = [];
   currentOffset = 0;
   hasMore = true;
@@ -973,9 +985,14 @@ async function checkComfyStatus() {
 }
 
 async function loadFirstPage() {
+  const requestedView = viewVersion;
+  const requestId = ++firstPageRequest;
   try {
     const res = await fetch(buildApiUrl(pageLimit, 0));
+    if (!res.ok) return;
     const data = await res.json();
+    if (requestedView !== viewVersion || requestId !== firstPageRequest) return;
+    let shouldRender = galleryItems.length === 0;
 
     if (galleryItems.length === 0) {
       galleryItems = data;
@@ -990,11 +1007,19 @@ async function loadFirstPage() {
       data.forEach(item => {
         const localItem = galleryItems.find(i => i.id === item.id);
         if (localItem) {
+          const visualFields = ['status', 'filename', 'prompt', 'prompt_original', 'source_prompt',
+            'source_prompt_original', 'parent_id',
+            'upscaled', 'megapixels', 'custom_size', 'aspect_ratio', 'additional_images', 'bypass_llm'];
+          if (visualFields.some(key => JSON.stringify(localItem[key]) !== JSON.stringify(item[key]))) {
+            shouldRender = true;
+          }
           localItem.status = item.status;
           localItem.filename = item.filename;
           localItem.comfyName = item.comfyName;
           localItem.prompt = item.prompt;
           localItem.prompt_original = item.prompt_original;
+          localItem.source_prompt = item.source_prompt;
+          localItem.source_prompt_original = item.source_prompt_original;
           localItem.parent_id = item.parent_id;
           localItem.progress = item.progress;
           localItem.upscaled = item.upscaled;
@@ -1003,21 +1028,47 @@ async function loadFirstPage() {
           localItem.aspect_ratio = item.aspect_ratio;
           localItem.additional_images = item.additional_images;
           localItem.bypass_llm = item.bypass_llm;
+          localItem.seed = item.seed;
+          updatePendingCardProgress(item.id, localItem.progress);
         }
       });
 
       if (newItems.length > 0) {
-        galleryItems = [...newItems, ...galleryItems];
         currentOffset += newItems.length;
+        shouldRender = true;
+      }
+      const loadedById = new Map(galleryItems.map(item => [item.id, item]));
+      const firstPage = data.map(item => loadedById.get(item.id) || item);
+      const firstPageIds = new Set(data.map(item => item.id));
+      galleryItems = [...firstPage, ...galleryItems.filter(item => !firstPageIds.has(item.id))];
+      if (!shouldRender) {
+        const visibleIds = Array.from(document.querySelectorAll('#gallery .gallery-card'))
+          .map(card => card.dataset.itemId);
+        shouldRender = visibleIds.some((id, index) => id !== galleryItems[index]?.id);
       }
     }
-    renderGallery();
+    if (shouldRender) renderGallery();
   } catch(e) {}
+}
+
+function updatePendingCardProgress(id, value) {
+  const card = Array.from(document.querySelectorAll('#gallery .gallery-card'))
+    .find(el => el.dataset.itemId === id);
+  if (!card) return;
+  const progress = Math.round((value || 0) * 100);
+  const bar = card.querySelector('.pending-progress-bar');
+  const label = card.querySelector('.pending-progress-label');
+  if (bar) bar.style.width = `${progress}%`;
+  if (label) label.textContent = `${progress}%`;
+  const wrapper = card.querySelector('.pending-progress');
+  if (wrapper) wrapper.style.display = progress > 0 ? '' : 'none';
 }
 
 async function loadMore() {
   if (isLoadingMore || !hasMore) return;
   isLoadingMore = true;
+  const requestedView = viewVersion;
+  const offset = currentOffset;
 
   const container = document.getElementById('gallery');
   const loader = document.createElement('div');
@@ -1027,8 +1078,9 @@ async function loadMore() {
   container.appendChild(loader);
 
   try {
-    const res = await fetch(buildApiUrl(pageLimit, currentOffset));
+    const res = await fetch(buildApiUrl(pageLimit, offset));
     const data = await res.json();
+    if (requestedView !== viewVersion) return;
 
     const existingLoader = document.getElementById('infinite-scroll-loader');
     if (existingLoader) existingLoader.remove();
@@ -1046,10 +1098,11 @@ async function loadMore() {
       renderGallery();
     }
   } catch(e) {
+    if (requestedView !== viewVersion) return;
     const existingLoader = document.getElementById('infinite-scroll-loader');
     if (existingLoader) existingLoader.remove();
   } finally {
-    isLoadingMore = false;
+    if (requestedView === viewVersion) isLoadingMore = false;
   }
 }
 
@@ -1200,6 +1253,7 @@ function renderGallery() {
   galleryItems.forEach((item, idx) => {
     const card = document.createElement('div');
     card.className = 'gallery-card';
+    card.dataset.itemId = item.id;
 
     if (item.status === 'pending') {
       const progress = item.progress !== undefined ? Math.round(item.progress * 100) : 0;
@@ -1214,12 +1268,12 @@ function renderGallery() {
           </button>
           <div class="spinner"></div>
           <p style="font-size:11px;color:#6b7280;text-align:center;line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">${item.prompt_original || item.prompt || 'Generating...'}</p>
-          ${progress > 0 ? `
-            <div style="width:80%;background:#1f2937;border-radius:4px;height:6px;overflow:hidden;margin-top:-4px;">
-              <div style="width:${progress}%;background:linear-gradient(90deg, #06b6d4, #10b981);height:100%;transition:width 0.2s ease-out;"></div>
+          <div class="pending-progress" style="display:${progress > 0 ? '' : 'none'};width:80%;">
+            <div style="background:#1f2937;border-radius:4px;height:6px;overflow:hidden;margin-top:-4px;">
+              <div class="pending-progress-bar" style="width:${progress}%;background:linear-gradient(90deg, #06b6d4, #10b981);height:100%;transition:width 0.2s ease-out;"></div>
             </div>
-            <p style="font-size:10px;color:#9ca3af;margin-top:-8px;font-family:monospace;font-weight:600;">${progress}%</p>
-          ` : ''}
+            <p class="pending-progress-label" style="font-size:10px;color:#9ca3af;font-family:monospace;font-weight:600;text-align:center;">${progress}%</p>
+          </div>
         </div>`;
       if (!isSelectionMode) {
         if (viewMode === 'roots' && item.parent_id === null) {
@@ -1260,7 +1314,7 @@ function renderGallery() {
       const base = item.filename.slice(0, -(ext.length + 1));
       img.src     = `/thumbnails/${base}.jpg`;
       img.loading = 'lazy';
-      img.alt     = item.prompt_original || item.prompt || '';
+      img.alt     = item.source_prompt_original || item.source_prompt || item.prompt_original || item.prompt || '';
       card.appendChild(img);
 
       if (!isSelectionMode) {
@@ -1451,8 +1505,14 @@ function updateModalContent() {
   viewImage.src = `/images/${item.filename}`;
   
   // Display split original prompt and LLM expanded prompt (truncated preview with full copy)
-  const origPrompt = item.prompt_original || '';
-  const finalPrompt = item.prompt || '';
+  const origPrompt = (item.upscaled ? item.source_prompt_original : item.prompt_original) || '';
+  const finalPrompt = (item.upscaled ? item.source_prompt : item.prompt) || item.prompt || '';
+  const upscalePromptWrapper = document.getElementById('upscalePromptWrapper');
+  upscalePromptWrapper.style.display = item.upscaled ? 'block' : 'none';
+  if (item.upscaled) {
+    viewUpscalePrompt.dataset.fullPrompt = item.prompt || '';
+    viewUpscalePrompt.textContent = truncatePrompt(item.prompt || '', 160);
+  }
 
   if (origPrompt && origPrompt !== finalPrompt) {
     originalPromptWrapper.style.display = 'block';
@@ -1462,7 +1522,7 @@ function updateModalContent() {
     txtPromptFinalTitle.textContent = "Optimized Prompt (LLM)";
   } else {
     originalPromptWrapper.style.display = 'none';
-    txtPromptFinalTitle.textContent = "Used Prompt";
+    txtPromptFinalTitle.textContent = item.upscaled ? "Image Prompt" : "Used Prompt";
   }
   
   viewPrompt.dataset.fullPrompt = finalPrompt;
@@ -1960,12 +2020,11 @@ async function handleRefImageSelected(event) {
     });
     if (!res.ok) throw new Error('Upload failed');
     const data = await res.json();
-    const localUrl = URL.createObjectURL(file);
     additionalReferenceImages.push({
       id: data.id,
       filename: data.filename,
       comfyName: data.comfyName,
-      url: localUrl
+      url: `/images/${data.filename}`
     });
     renderRefImagesList();
   } catch (e) {
@@ -2318,7 +2377,7 @@ function showCardActionsOverlay(card, item) {
   document.addEventListener('touchstart', outsideTapHandler, { passive: true });
 }
 
-async function triggerUpscale(itemId) {
+async function triggerUpscale(itemId, seed = null) {
   const item = galleryItems.find(i => i.id === itemId);
   if (item && item.status === 'completed' && (item.upscaled === true || (item.megapixels && item.megapixels >= 2.0))) {
     showToast('This image is already at maximum resolution (2MP).');
@@ -2329,7 +2388,7 @@ async function triggerUpscale(itemId) {
     const res = await fetch('/api/upscale', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ item_id: itemId })
+      body: JSON.stringify({ item_id: itemId, seed: seed })
     });
     if (res.ok) {
       showToast('Upscale requested successfully!');
@@ -2386,7 +2445,7 @@ async function reprocessCurrent() {
 
   if (item.upscaled) {
     closeImageModal();
-    await triggerUpscale(item.parent_id || item.id);
+    await triggerUpscale(item.parent_id || item.id, item.seed);
     return;
   }
 
@@ -2414,6 +2473,8 @@ async function reprocessCurrent() {
         base_id: item.parent_id, 
         prompt: item.prompt,
         bypass_llm: true,
+        seed: item.seed,
+        original_prompt: item.prompt_original,
         // Resubmit the exact same configuration, not just the prompt.
         additional_images: item.additional_images || [],
         custom_size: item.custom_size !== undefined ? item.custom_size : true,
@@ -2445,7 +2506,7 @@ async function retrySingleFailed(item) {
   if (!item) return;
   try {
     if (item.upscaled) {
-      await triggerUpscale(item.parent_id || item.id);
+      await triggerUpscale(item.parent_id || item.id, item.seed);
       return;
     }
 
@@ -2455,6 +2516,8 @@ async function retrySingleFailed(item) {
       // the backend; bypass_llm means it must be reused verbatim.
       prompt: item.prompt || item.prompt_original,
       bypass_llm: true,
+      seed: item.seed,
+      original_prompt: item.prompt_original,
       additional_images: item.additional_images || [],
       custom_size: item.custom_size !== undefined ? item.custom_size : true,
       aspect_ratio: item.aspect_ratio || '1:1 (Square)',
@@ -2494,9 +2557,13 @@ document.getElementById('uploadInput').addEventListener('change', async (e) => {
   fd.append('file', file);
   
   try {
-    await fetch('/api/upload', { method: 'POST', body: fd });
+    const res = await fetch('/api/upload', { method: 'POST', body: fd });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(error.detail || 'Upload failed.');
+    }
   } catch(e) {
-    alert('Error uploading image.');
+    alert('Error uploading image: ' + e.message);
   } finally {
     if (btn && originalHTML) {
       btn.disabled = false;

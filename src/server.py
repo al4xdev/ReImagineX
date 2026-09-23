@@ -6,6 +6,7 @@ import sys
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from io import BytesIO
 from pathlib import Path
 from typing import Any, Optional, cast
 
@@ -16,11 +17,12 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from PIL import Image
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from src.config import load_settings, save_settings
 from src.state_manager import _load, _save, delete_item_reparent, load_state, state_lock
+from src.upload_processing import MAX_UPLOAD_PIXELS, build_downscale_workflow
 from src.workflow import DEFAULT_UPSCALE_PROMPT, build_generation_workflow, build_upscale_workflow
 
 # ── Configurations & Initial State ───────────────────────────────────────────
@@ -92,6 +94,76 @@ async def upload_to_comfy(filepath: str, filename: str) -> str:
             res = await client.post(f"{settings.comfy_url}/upload/image", files={"image": (upload_name, f, "image/png")})
             res.raise_for_status()
             return str(res.json()["name"])
+
+
+async def upload_bytes_to_comfy(data: bytes, filename: str, content_type: str) -> str:
+    settings = load_settings()
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{settings.comfy_url}/upload/image",
+            files={"image": (os.path.basename(filename), data, content_type)},
+        )
+        res.raise_for_status()
+        return str(res.json()["name"])
+
+
+async def prepare_uploaded_image(
+    data: bytes, source_filename: str, stored_filename: str, filepath: str, content_type: str
+) -> str:
+    """Keep uploaded images at or below 2 MP before they enter the gallery."""
+    try:
+        with Image.open(BytesIO(data)) as image:
+            pixels = image.width * image.height
+            if pixels <= MAX_UPLOAD_PIXELS and image.format != "PNG":
+                oriented = ImageOps.exif_transpose(image)
+                if oriented.mode not in ("RGB", "RGBA"):
+                    oriented = oriented.convert("RGBA" if "transparency" in oriented.info else "RGB")
+                output = BytesIO()
+                oriented.save(output, format="PNG")
+                data = output.getvalue()
+    except (UnidentifiedImageError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="Invalid image file.") from exc
+
+    if pixels <= MAX_UPLOAD_PIXELS:
+        save_image_with_thumbnail(filepath, data)
+        return await upload_to_comfy(filepath, stored_filename)
+
+    settings = load_settings()
+    source_name = await upload_bytes_to_comfy(data, source_filename, content_type)
+    workflow = build_downscale_workflow(source_name)
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        submitted = await client.post(f"{settings.comfy_url}/prompt", json={"prompt": workflow, "client_id": CLIENT_ID})
+        submitted.raise_for_status()
+        prompt_id = str(submitted.json()["prompt_id"])
+
+        deadline = asyncio.get_running_loop().time() + 300
+        while asyncio.get_running_loop().time() < deadline:
+            history_response = await client.get(f"{settings.comfy_url}/history/{prompt_id}")
+            history_response.raise_for_status()
+            history = history_response.json().get(prompt_id)
+            if isinstance(history, dict):
+                if history.get("status", {}).get("status_str") == "error":
+                    raise HTTPException(status_code=502, detail="ComfyUI failed to downscale the uploaded image.")
+                outputs = history.get("outputs", {})
+                batch = _first_image_batch(outputs) if isinstance(outputs, dict) else None
+                if batch:
+                    result = batch[0]
+                    image_response = await client.get(
+                        f"{settings.comfy_url}/view",
+                        params={
+                            "filename": result["filename"],
+                            "subfolder": result.get("subfolder", ""),
+                            "type": result.get("type", "output"),
+                        },
+                    )
+                    image_response.raise_for_status()
+                    with Image.open(BytesIO(image_response.content)) as image:
+                        if image.width * image.height > MAX_UPLOAD_PIXELS:
+                            raise HTTPException(status_code=502, detail="ComfyUI returned an image larger than 2 MP.")
+                    save_image_with_thumbnail(filepath, image_response.content)
+                    return await upload_to_comfy(filepath, stored_filename)
+            await asyncio.sleep(0.5)
+    raise HTTPException(status_code=504, detail="Timed out waiting for ComfyUI to downscale the uploaded image.")
 
 CLIENT_ID = str(uuid.uuid4())
 
@@ -319,20 +391,33 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 @app.get("/api/state")
 async def get_state(limit: int = 20, offset: int = 0, root_id: Optional[str] = None) -> list[dict[str, Any]]:
     state = await load_state()
+    items_by_id = {item["id"]: item for item in state}
+    for item in state:
+        if item.get("upscaled") and not item.get("source_prompt"):
+            parent = items_by_id.get(item.get("parent_id"))
+            if parent:
+                item["source_prompt"] = parent.get("source_prompt") or parent.get("prompt")
+                item["source_prompt_original"] = parent.get("source_prompt_original") or parent.get("prompt_original")
     if root_id:
-        # Return a specific item + all its descendants (lineage view)
-        def get_descendants(parent_id: str) -> list[dict[str, Any]]:
-            children = []
-            for item in state:
-                if item.get("parent_id") == parent_id:
-                    children.append(item)
-                    children.extend(get_descendants(item["id"]))
-            return children
-
         root = next((i for i in state if i["id"] == root_id), None)
         if not root:
             raise HTTPException(status_code=404, detail="Image not found")
-        subtree = [root] + get_descendants(root_id)
+        # State is newest first. Keep the album root first, then every descendant
+        # in creation order, regardless of which branch it belongs to.
+        children_by_parent: dict[str, list[str]] = {}
+        for item in state:
+            parent_id = item.get("parent_id")
+            if parent_id is not None:
+                children_by_parent.setdefault(parent_id, []).append(item["id"])
+        descendant_ids: set[str] = set()
+        pending_ids = list(children_by_parent.get(root_id, []))
+        while pending_ids:
+            descendant_id = pending_ids.pop()
+            if descendant_id in descendant_ids:
+                continue
+            descendant_ids.add(descendant_id)
+            pending_ids.extend(children_by_parent.get(descendant_id, []))
+        subtree = [root] + [item for item in state if item["id"] in descendant_ids]
         for item in subtree:
             pid = item.get("prompt_id")
             if pid and pid in active_progress:
@@ -353,8 +438,10 @@ async def handle_upload(file: UploadFile = File(...)) -> dict[str, Any]:
     # Initial upload root images are stored in gallery_data/imagens/root/
     filename = f"root/{item_id}.png"
     filepath = os.path.join(STARTUP_IMG_DIR, filename)
-    save_image_with_thumbnail(filepath, await file.read())
-    comfy_name = await upload_to_comfy(filepath, filename)
+    comfy_name = await prepare_uploaded_image(
+        await file.read(), file.filename or filename, filename, filepath,
+        file.content_type or "application/octet-stream",
+    )
     new_item = {
         "id": item_id,
         "parent_id": None,
@@ -375,12 +462,13 @@ async def handle_upload(file: UploadFile = File(...)) -> dict[str, Any]:
 @app.post("/api/upload-reference")
 async def handle_upload_reference(file: UploadFile = File(...)) -> dict[str, Any]:
     ref_id = str(uuid.uuid4())
-    ext = os.path.splitext(file.filename or "")[1] or ".png"
-    filename = f"references/ref_{ref_id}{ext}"
+    filename = f"references/ref_{ref_id}.png"
     filepath = os.path.join(STARTUP_IMG_DIR, filename)
     data = await file.read()
-    save_image_with_thumbnail(filepath, data)
-    comfy_name = await upload_to_comfy(filepath, filename)
+    comfy_name = await prepare_uploaded_image(
+        data, file.filename or filename, filename, filepath,
+        file.content_type or "application/octet-stream",
+    )
     return {
         "id": ref_id,
         "filename": filename,
@@ -396,6 +484,8 @@ class PromptRequest(BaseModel):
     megapixels: float = 1.0
     bypass_llm: bool = False
     llm_provider: Optional[str] = None
+    seed: Optional[int] = Field(default=None, ge=0, le=0xFFFFFFFF)
+    original_prompt: Optional[str] = None
 
 def _clean_llm_response(text: str) -> str:
     """Strip markdown code block fences and trailing whitespace from LLM output."""
@@ -540,10 +630,11 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
         prompt_final = await expand_prompt(req.prompt, req.llm_provider)
 
     # ── ComfyUI Workflow Generation ───────────────────────────────────────────
+    seed = req.seed if req.seed is not None else int.from_bytes(os.urandom(4), byteorder="little")
     wf = build_generation_workflow(
         prompt=prompt_final,
         base_image_comfy_name=base_item["comfyName"],
-        seed=int.from_bytes(os.urandom(4), byteorder="little"),
+        seed=seed,
         additional_images=req.additional_images,
         custom_size=req.custom_size,
         aspect_ratio=req.aspect_ratio,
@@ -570,7 +661,8 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
         "comfyName": None,
         "prompt_id": prompt_id,
         "prompt": prompt_final,
-        "prompt_original": req.prompt,
+        "prompt_original": req.original_prompt if req.original_prompt is not None else req.prompt,
+        "seed": seed,
         "bypass_llm": req.bypass_llm,
         "additional_images": req.additional_images,
         "custom_size": req.custom_size,
@@ -587,6 +679,7 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
 # ── Qwen 2.1 Prompt-Based 2MP Upscaler ────────────────────────────────────────
 class UpscaleRequest(BaseModel):
     item_id: str
+    seed: Optional[int] = Field(default=None, ge=0, le=0xFFFFFFFF)
 
 @app.post("/api/upscale")
 async def upscale_image(req: UpscaleRequest) -> dict[str, Any]:
@@ -620,7 +713,7 @@ async def upscale_image(req: UpscaleRequest) -> dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read image dimensions: {e}")
 
-    seed = int.from_bytes(os.urandom(4), byteorder="little")
+    seed = req.seed if req.seed is not None else int.from_bytes(os.urandom(4), byteorder="little")
     wf = build_upscale_workflow(
         base_image_comfy_name=base_item["comfyName"],
         original_width=orig_w,
@@ -650,6 +743,9 @@ async def upscale_image(req: UpscaleRequest) -> dict[str, Any]:
         "prompt_id": prompt_id,
         "prompt": DEFAULT_UPSCALE_PROMPT,
         "prompt_original": "Upscale (2MP)",
+        "source_prompt": base_item.get("source_prompt") or base_item.get("prompt"),
+        "source_prompt_original": base_item.get("source_prompt_original") or base_item.get("prompt_original"),
+        "seed": seed,
         "bypass_llm": True,
         "upscaled": True,
         "megapixels": 2.0

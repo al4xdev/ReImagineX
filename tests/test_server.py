@@ -1,16 +1,20 @@
 import asyncio
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
 
 from src.server import (
     ConfigSchema,
+    PromptRequest,
     _clean_llm_response,
     _first_image_batch,
     _safe_child,
+    generate,
     get_config,
+    get_state,
     get_ws_url,
     update_config,
 )
@@ -141,3 +145,96 @@ def test_clean_llm_response_strips_code_fences_and_whitespace() -> None:
     assert _clean_llm_response("```\nA scenic sunset\n```") == "A scenic sunset"
     assert _clean_llm_response("```markdown\nA scenic sunset\n```") == "A scenic sunset"
     assert _clean_llm_response("  A clean prompt  ") == "A clean prompt"
+
+
+def test_album_keeps_root_first_and_other_images_newest_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Stored state is newest first; the newest image can belong to an older branch.
+    state = [
+        {"id": "new-grandchild", "parent_id": "older-child", "status": "completed"},
+        {"id": "other-root-child", "parent_id": "other-root", "status": "completed"},
+        {"id": "new-child", "parent_id": "root", "status": "completed"},
+        {"id": "older-child", "parent_id": "root", "status": "completed"},
+        {"id": "root", "parent_id": None, "status": "completed"},
+        {"id": "other-root", "parent_id": None, "status": "completed"},
+    ]
+
+    async def fake_load_state() -> list[dict[str, Any]]:
+        return state
+
+    monkeypatch.setattr("src.server.load_state", fake_load_state)
+    result = asyncio.run(get_state(root_id="root"))
+
+    assert [item["id"] for item in result] == ["root", "new-grandchild", "new-child", "older-child"]
+
+
+def test_legacy_upscale_exposes_source_prompt_for_frontend(monkeypatch: pytest.MonkeyPatch) -> None:
+    state = [
+        {"id": "upscaled", "parent_id": "original", "upscaled": True,
+         "prompt": "technical upscale prompt", "prompt_original": "Upscale (2MP)"},
+        {"id": "original", "parent_id": "root", "prompt": "expanded image prompt",
+         "prompt_original": "my image prompt"},
+        {"id": "root", "parent_id": None, "prompt": "Initial Upload"},
+    ]
+
+    async def fake_load_state() -> list[dict[str, Any]]:
+        return state
+
+    monkeypatch.setattr("src.server.load_state", fake_load_state)
+    result = asyncio.run(get_state(root_id="root"))
+    upscaled = next(item for item in result if item["id"] == "upscaled")
+
+    assert upscaled["source_prompt"] == "expanded image prompt"
+    assert upscaled["source_prompt_original"] == "my image prompt"
+    assert upscaled["prompt"] == "technical upscale prompt"
+
+
+def test_reprocess_reuses_seed_and_expanded_prompt(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    base = {"id": "base", "parent_id": None, "filename": "base.png", "comfyName": "base.png"}
+    saved: list[dict[str, Any]] = []
+    submitted: list[dict[str, Any]] = []
+
+    async def fake_load_state() -> list[dict[str, Any]]:
+        return [base]
+
+    def fake_load() -> list[dict[str, Any]]:
+        return [base]
+
+    def fake_save(state: list[dict[str, Any]]) -> None:
+        saved.extend(state)
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self) -> dict[str, str]:
+            return {"prompt_id": "comfy-prompt"}
+
+    class FakeClient:
+        async def __aenter__(self) -> "FakeClient":
+            return self
+
+        async def __aexit__(self, *_args: Any) -> None:
+            pass
+
+        async def post(self, _url: str, json: dict[str, Any]) -> FakeResponse:
+            submitted.append(json["prompt"])
+            return FakeResponse()
+
+    monkeypatch.setattr("src.server.load_state", fake_load_state)
+    monkeypatch.setattr("src.server._load", fake_load)
+    monkeypatch.setattr("src.server._save", fake_save)
+    monkeypatch.setattr("src.server.httpx.AsyncClient", FakeClient)
+
+    request = PromptRequest(
+        base_id="base", prompt="expanded prompt", original_prompt="original prompt",
+        bypass_llm=True, seed=123, additional_images=["ref.png"],
+    )
+    result = asyncio.run(generate(request))
+
+    assert result["seed"] == 123
+    assert result["prompt"] == "expanded prompt"
+    assert result["prompt_original"] == "original prompt"
+    assert saved[0]["seed"] == 123
+    assert submitted[0]["459:458"]["inputs"]["seed"] == 123
+    assert submitted[0]["459:474"]["inputs"]["prompt"] == "expanded prompt"
+    assert submitted[0]["load_ref_2"]["inputs"]["image"] == "ref.png"
