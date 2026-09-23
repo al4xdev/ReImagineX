@@ -1,8 +1,13 @@
+from pathlib import Path
+from typing import Any
+
+import pytest
+
 from src import state_manager
 
 
 def test_delete_reparents_children() -> None:
-    state = [
+    state: list[dict[str, Any]] = [
         {"id": "root", "parent_id": None},
         {"id": "middle", "parent_id": "root"},
         {"id": "child", "parent_id": "middle"},
@@ -15,7 +20,7 @@ def test_delete_reparents_children() -> None:
     assert updated[1]["parent_id"] == "root"
 
 
-def test_state_round_trip_is_atomic(tmp_path, monkeypatch) -> None:
+def test_state_round_trip_is_atomic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     state = [{"id": "root", "parent_id": None}]
 

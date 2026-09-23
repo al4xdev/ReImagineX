@@ -46,7 +46,7 @@ def render_thumbnail(image_path: str | os.PathLike[str], thumb_path: str | os.Pa
     thumb.parent.mkdir(parents=True, exist_ok=True)
     with Image.open(image_path) as opened:
         opened.thumbnail(THUMBNAIL_SIZE)
-        img = opened.convert("RGB") if opened.mode in ("RGBA", "P") else opened
+        img = opened.convert("RGB") if opened.mode != "RGB" else opened
         img.save(thumb, "JPEG", quality=THUMBNAIL_QUALITY)
 
 
@@ -397,6 +397,19 @@ class PromptRequest(BaseModel):
     bypass_llm: bool = False
     llm_provider: Optional[str] = None
 
+def _clean_llm_response(text: str) -> str:
+    """Strip markdown code block fences and trailing whitespace from LLM output."""
+    result = text.strip()
+    if result.startswith("```"):
+        lines = result.splitlines()
+        if lines and lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        result = "\n".join(lines).strip()
+    return result
+
+
 async def expand_prompt_deepseek(user_prompt: str) -> Optional[str]:
     settings = load_settings()
     if not settings.deepseek_api_key:
@@ -427,14 +440,7 @@ async def expand_prompt_deepseek(user_prompt: str) -> Optional[str]:
                 }
             )
             if res.status_code == 200:
-                result = str(res.json()["choices"][0]["message"]["content"]).strip()
-                if result.startswith("```"):
-                    lines = result.splitlines()
-                    if lines[0].startswith("```"):
-                        lines = lines[1:]
-                    if lines and lines[-1].startswith("```"):
-                        lines = lines[:-1]
-                    result = "\n".join(lines).strip()
+                result = _clean_llm_response(str(res.json()["choices"][0]["message"]["content"]))
                 print(f"Success with DeepSeek: {result}")
                 return result
             else:
@@ -473,7 +479,7 @@ async def expand_prompt_openrouter(user_prompt: str) -> Optional[str]:
                 )
                 
                 if res.status_code == 200:
-                    optimized_prompt = str(res.json()["choices"][0]["message"]["content"]).strip()
+                    optimized_prompt = _clean_llm_response(str(res.json()["choices"][0]["message"]["content"]))
                     print(f"Success with OpenRouter [{model}]: {optimized_prompt}")
                     return optimized_prompt
                 else:
@@ -512,7 +518,7 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
     state = await load_state()
     
     base_item = next((i for i in state if i["id"] == req.base_id), None)
-    if not base_item or not base_item.get("comfyName"):
+    if not base_item:
         raise HTTPException(status_code=400, detail="Invalid base image.")
         
     # Re-upload the base image to ComfyUI to guarantee it exists in ComfyUI's input directory
@@ -523,6 +529,9 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
             base_item["comfyName"] = comfy_name
         except Exception as e:
             print(f"Failed to auto-upload base image to ComfyUI: {e}")
+            
+    if not base_item.get("comfyName"):
+        raise HTTPException(status_code=400, detail="Invalid base image.")
     
     # ── LLM Bypass / Expansion ────────────────────────────────────────────────
     if req.bypass_llm:
@@ -674,6 +683,10 @@ async def delete_items(req: DeleteRequest) -> dict[str, Any]:
         # Clean up files and directories recursively on disk, and cancel pending tasks
         for r_id in all_removed_ids:
             item = next((i for i in state if i["id"] == r_id), None)
+            # Clean up active progress tracking if any
+            if item and item.get("prompt_id"):
+                active_progress.pop(item["prompt_id"], None)
+
             if item:
                 # 1. Cancel in ComfyUI queue if item is currently pending execution
                 if item.get("status") == "pending" and item.get("prompt_id"):
@@ -684,7 +697,7 @@ async def delete_items(req: DeleteRequest) -> dict[str, Any]:
                         except Exception as ex:
                             print(f"Error canceling pending ComfyUI task {item['prompt_id']}: {ex}")
                 
-                # 2. Remove the corresponding image file
+                # 2. Remove the corresponding image file and its thumbnail
                 if item.get("filename"):
                     file_path = os.path.join(STARTUP_IMG_DIR, item["filename"])
                     if os.path.exists(file_path):
@@ -692,14 +705,21 @@ async def delete_items(req: DeleteRequest) -> dict[str, Any]:
                             os.remove(file_path)
                         except OSError:
                             pass
+                    thumb_path = thumbnail_path_for(file_path)
+                    if os.path.exists(thumb_path):
+                        try:
+                            os.remove(thumb_path)
+                        except OSError:
+                            pass
             
-            # 3. Remove the directory of descendants associated with this item ID
-            dir_path = os.path.join(STARTUP_IMG_DIR, r_id)
-            if os.path.exists(dir_path):
-                try:
-                    shutil.rmtree(dir_path, ignore_errors=True)
-                except OSError:
-                    pass
+            # 3. Remove the directory of descendants associated with this item ID (images and thumbnails)
+            for base_dir in (STARTUP_IMG_DIR, STARTUP_THUMB_DIR):
+                dir_path = os.path.join(base_dir, r_id)
+                if os.path.exists(dir_path):
+                    try:
+                        shutil.rmtree(dir_path, ignore_errors=True)
+                    except OSError:
+                        pass
                 
     return {"status": "ok", "deleted_count": len(all_removed_ids)}
 
@@ -785,7 +805,7 @@ async def get_comfy_models() -> dict[str, list[str]]:
             return []
 
         return {
-            "diffusion_models": extract_options("UNETLoader", "unet_name") or extract_options("DiffusionModelLoaderKJ", "model_name"),
+            "diffusion_models": extract_options("UNETLoader", "unet_name"),
             "clip_models": extract_options("CLIPLoader", "clip_name"),
             "clip_types": extract_options("CLIPLoader", "type"),
             "vae_models": extract_options("VAELoader", "vae_name"),

@@ -99,7 +99,7 @@ Rules:
 
 15. Return only the final rewritten English prompt."""
     llm_provider: str = "deepseek"  # "deepseek" or "openrouter"
-    deepseek_api_key: str = ""
+    deepseek_api_key: str = Field(default="", validation_alias="DEEPSEEK_API_KEY")
     deepseek_model: str = "deepseek-flash"
     openrouter_models: list[str] = [
         "deepseek/deepseek-v4-flash",

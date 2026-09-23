@@ -1,9 +1,12 @@
 import json
+from pathlib import Path
+
+import pytest
 
 from src.config import Settings, load_settings, save_settings
 
 
-def test_settings_are_saved_atomically(tmp_path, monkeypatch) -> None:
+def test_settings_are_saved_atomically(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("DATA_DIR", str(tmp_path))
     settings = Settings()
     settings.system_prompt = "A neutral prompt"

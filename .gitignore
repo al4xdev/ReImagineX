@@ -14,3 +14,8 @@ galeria_dados/
 
 # Environment file (contains API keys)
 .env
+
+# Test & linter caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
