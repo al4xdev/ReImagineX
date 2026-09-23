@@ -304,7 +304,7 @@ def test_generation_workflow_injects_sage_attention() -> None:
 
     assert workflow[SAGE_NODE]["class_type"] == "PathchSageAttentionKJ"
     assert workflow[SAGE_NODE]["inputs"]["model"] == [UNET_NODE, 0]
-    assert workflow[SAGE_NODE]["inputs"]["sage_attention"] == "sageattn3"
+    assert workflow[SAGE_NODE]["inputs"]["sage_attention"] == "auto"
     assert workflow[CACHE_NODE]["inputs"]["model"] == [SAGE_NODE, 0]
 
 

@@ -117,8 +117,8 @@ Ensure the following models are downloaded and placed in the respective folders 
 | `PornMaster_QI2.1_Low_Resolution_Slider_V1.safetensors` | `models/loras/` | LoRA | Qwen 2.1 Resolution Slider (used at -3.0 weight for upscale) |
 
 ### Generation & Upscaling Architecture
-1. **Qwen Image 2.1 Edit Workflow**: Uses native ComfyUI UNET/CLIP/VAE loaders alongside `TextEncodeQwenImage21`, `PathchSageAttentionKJ` (`sageattn3`), `QwenImage21Cache` and sampler nodes ([workflow_api.json](workflow_api.json)).
-2. **Qwen 2.1 Prompt-Based 2MP Upscaler**: Uses [workflow_upscale_api.json](workflow_upscale_api.json) with high-detail DSLR restoration prompt, resolution slider LoRA (`-3.0` weight), and `PathchSageAttentionKJ` (`sageattn3`) to reconstruct micro-textures and upscale images to 2 Megapixels without external ESRGAN weights (~2.5x faster inference).
+1. **Qwen Image 2.1 Edit Workflow**: Uses native ComfyUI UNET/CLIP/VAE loaders alongside `TextEncodeQwenImage21`, `PathchSageAttentionKJ` (`auto` mode for SageAttention 2 INT8/FP16), `QwenImage21Cache` and sampler nodes ([workflow_api.json](workflow_api.json)).
+2. **Qwen 2.1 Prompt-Based 2MP Upscaler**: Uses [workflow_upscale_api.json](workflow_upscale_api.json) with high-detail DSLR restoration prompt, resolution slider LoRA (`-3.0` weight), and `PathchSageAttentionKJ` (`auto` mode) to reconstruct micro-textures and upscale images to 2 Megapixels without external ESRGAN weights (~2.5x faster inference, zero deformation).
 
 ---
 

@@ -190,7 +190,7 @@
         "459:475",
         0
       ],
-      "sage_attention": "sageattn3",
+      "sage_attention": "auto",
       "allow_compile": false
     },
     "class_type": "PathchSageAttentionKJ",

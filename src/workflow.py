@@ -55,7 +55,7 @@ def _get_upscale_workflow_base() -> Workflow:
     return _UPSCALE_WORKFLOW_CACHE
 
 
-DEFAULT_SAGE_ATTENTION = "sageattn3"
+DEFAULT_SAGE_ATTENTION = "auto"
 
 
 def build_generation_workflow(
