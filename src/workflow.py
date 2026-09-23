@@ -124,6 +124,15 @@ def build_generation_workflow(
     return wf
 
 
+DEFAULT_UPSCALE_PROMPT = (
+    "Repair damaged pixels, add texture details, and improve image quality. "
+    "64K photo, an ultra-high-resolution photograph captured with a professional DSLR camera, "
+    "using master-level photographic techniques by a professional photographer."
+)
+DEFAULT_UPSCALE_LORA = "PornMaster_QI2.1_Low_Resolution_Slider_V1.safetensors"
+DEFAULT_UPSCALE_LORA_STRENGTH = -3.0
+
+
 def build_upscale_workflow(
     base_image_comfy_name: str,
     original_width: int,
@@ -136,6 +145,9 @@ def build_upscale_workflow(
     diffusion_model_name: str = "qwen_image_2.1_int8_convrot.safetensors",
     clip_model_name: str = "qwen3vl_8b_int8_convrot.safetensors",
     vae_model_name: str = "qwen_image_2.1_vae_bf16.safetensors",
+    lora_name: str = DEFAULT_UPSCALE_LORA,
+    lora_strength: float = DEFAULT_UPSCALE_LORA_STRENGTH,
+    prompt: str = DEFAULT_UPSCALE_PROMPT,
 ) -> Workflow:
     wf = copy.deepcopy(_get_upscale_workflow_base())
 
@@ -147,23 +159,39 @@ def build_upscale_workflow(
     if "459:454" in wf and "vae_name" in wf["459:454"]["inputs"]:
         wf["459:454"]["inputs"]["vae_name"] = vae_model_name
 
-    # 2. Base Image
+    # 2. LoRA
+    if "459:475" in wf:
+        if lora_name and lora_strength != 0.0:
+            wf["459:475"]["inputs"]["lora_name"] = lora_name
+            wf["459:475"]["inputs"]["strength_model"] = lora_strength
+            if "strength_clip" in wf["459:475"]["inputs"]:
+                wf["459:475"]["inputs"]["strength_clip"] = lora_strength
+        else:
+            # Bypass LoRA: reconnect cache directly to unet and text encode to clip
+            if "459:469" in wf:
+                wf["459:469"]["inputs"]["model"] = ["459:451", 0]
+            if "459:474" in wf:
+                wf["459:474"]["inputs"]["clip"] = ["459:453", 0]
+            del wf["459:475"]
+
+    # 3. Base Image & Prompt
     if "470" in wf:
         wf["470"]["inputs"]["image"] = base_image_comfy_name
     if "459:474" in wf:
         wf["459:474"]["inputs"]["images.image_1"] = ["470", 0]
+        wf["459:474"]["inputs"]["prompt"] = prompt
 
-    # 3. Calculate 2MP resolution
+    # 4. Calculate 2MP resolution
     new_w, new_h = calculate_resolution(original_width, original_height, mp=mp, multiple=32)
     if "459:456" in wf:
         wf["459:456"]["inputs"]["width"] = new_w
         wf["459:456"]["inputs"]["height"] = new_h
 
-    # 4. Latent Switch (ensures on_true / empty latent at 2MP is used)
+    # 5. Latent Switch (ensures on_true / empty latent at 2MP is used)
     if "459:468" in wf:
         wf["459:468"]["inputs"]["switch"] = True
 
-    # 5. KSampler parameters
+    # 6. KSampler parameters
     if "459:458" in wf:
         wf["459:458"]["inputs"]["seed"] = seed
         wf["459:458"]["inputs"]["steps"] = steps

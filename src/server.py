@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from src.config import load_settings, save_settings
 from src.state_manager import _load, _save, delete_item_reparent, load_state, state_lock
-from src.workflow import build_generation_workflow, build_upscale_workflow
+from src.workflow import DEFAULT_UPSCALE_PROMPT, build_generation_workflow, build_upscale_workflow
 
 # ── Configurations & Initial State ───────────────────────────────────────────
 startup_settings = load_settings()
@@ -648,7 +648,7 @@ async def upscale_image(req: UpscaleRequest) -> dict[str, Any]:
         "filename": filename,
         "comfyName": None,
         "prompt_id": prompt_id,
-        "prompt": "Keep the image visually the same. Preserve the subject’s identity, facial features, hairstyle, body proportions, pose, clothing, background, framing, and lighting. Only reduce noise, clean artifacts, refine textures, and improve sharpness and detail for a cleaner high-resolution result.",
+        "prompt": DEFAULT_UPSCALE_PROMPT,
         "prompt_original": "Upscale (2MP)",
         "bypass_llm": True,
         "upscaled": True,

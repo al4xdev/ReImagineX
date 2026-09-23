@@ -133,7 +133,7 @@
       "device": "auto",
       "dtype": "default",
       "model": [
-        "459:451",
+        "459:475",
         0
       ]
     },
@@ -144,12 +144,12 @@
   },
   "459:474": {
     "inputs": {
-      "prompt": "Keep the image visually the same. Preserve the subject’s identity, facial features, hairstyle, body proportions, pose, clothing, background, framing, and lighting. Only reduce noise, clean artifacts, refine textures, and improve sharpness and detail for a cleaner high-resolution result.",
+      "prompt": "Repair damaged pixels, add texture details, and improve image quality. 64K photo, an ultra-high-resolution photograph captured with a professional DSLR camera, using master-level photographic techniques by a professional photographer.",
       "negative_prompt": "",
       "resolution": 0,
       "clip": [
-        "459:453",
-        0
+        "459:475",
+        1
       ],
       "images.image_1": [
         "470",
@@ -163,6 +163,25 @@
     "class_type": "TextEncodeQwenImage21",
     "_meta": {
       "title": "Text Encode Qwen Image 2.1"
+    }
+  },
+  "459:475": {
+    "inputs": {
+      "lora_name": "PornMaster_QI2.1_Low_Resolution_Slider_V1.safetensors",
+      "strength_model": -3.0,
+      "strength_clip": -3.0,
+      "model": [
+        "459:451",
+        0
+      ],
+      "clip": [
+        "459:453",
+        0
+      ]
+    },
+    "class_type": "LoraLoader",
+    "_meta": {
+      "title": "Load LoRA"
     }
   }
 }

@@ -4,6 +4,9 @@ from typing import Any
 import pytest
 
 from src.workflow import (
+    DEFAULT_UPSCALE_LORA,
+    DEFAULT_UPSCALE_LORA_STRENGTH,
+    DEFAULT_UPSCALE_PROMPT,
     _get_upscale_workflow_base,
     _get_workflow_base,
     build_generation_workflow,
@@ -24,6 +27,8 @@ LATENT_NODE = "459:456"  # EmptyLatentImage
 SWITCH_NODE = "459:468"  # ComfySwitchNode
 SELECTOR_NODE = "13"  # ResolutionSelector
 BASE_IMAGE_NODE = "470"  # LoadImage
+LORA_NODE = "459:475"  # LoraLoader
+CACHE_NODE = "459:469"  # QwenImage21Cache
 
 
 def _build_generation(**overrides: Any) -> dict[str, Any]:
@@ -225,9 +230,51 @@ def test_upscale_workflow_sets_target_resolution_and_latent_switch(
 
     assert workflow[BASE_IMAGE_NODE]["inputs"]["image"] == "upscale-input.png"
     assert workflow[PROMPT_NODE]["inputs"]["images.image_1"] == [BASE_IMAGE_NODE, 0]
+    assert workflow[PROMPT_NODE]["inputs"]["prompt"] == DEFAULT_UPSCALE_PROMPT
     assert workflow[UNET_NODE]["inputs"]["unet_name"] == "d.safetensors"
     assert workflow[CLIP_NODE]["inputs"]["clip_name"] == "c.safetensors"
     assert workflow[VAE_NODE]["inputs"]["vae_name"] == "v.safetensors"
+
+    # LoRA injection defaults
+    assert workflow[LORA_NODE]["class_type"] == "LoraLoader"
+    assert workflow[LORA_NODE]["inputs"]["lora_name"] == DEFAULT_UPSCALE_LORA
+    assert workflow[LORA_NODE]["inputs"]["strength_model"] == DEFAULT_UPSCALE_LORA_STRENGTH
+    assert workflow[LORA_NODE]["inputs"]["strength_clip"] == DEFAULT_UPSCALE_LORA_STRENGTH
+    assert workflow[LORA_NODE]["inputs"]["model"] == [UNET_NODE, 0]
+    assert workflow[LORA_NODE]["inputs"]["clip"] == [CLIP_NODE, 0]
+    assert workflow[CACHE_NODE]["inputs"]["model"] == [LORA_NODE, 0]
+    assert workflow[PROMPT_NODE]["inputs"]["clip"] == [LORA_NODE, 1]
+
+
+def test_upscale_workflow_custom_lora_and_prompt() -> None:
+    workflow = build_upscale_workflow(
+        base_image_comfy_name="custom.png",
+        original_width=512,
+        original_height=512,
+        seed=99,
+        lora_name="Custom_Slider.safetensors",
+        lora_strength=-2.5,
+        prompt="Custom high resolution restoration prompt",
+    )
+
+    assert workflow[LORA_NODE]["inputs"]["lora_name"] == "Custom_Slider.safetensors"
+    assert workflow[LORA_NODE]["inputs"]["strength_model"] == -2.5
+    assert workflow[LORA_NODE]["inputs"]["strength_clip"] == -2.5
+    assert workflow[PROMPT_NODE]["inputs"]["prompt"] == "Custom high resolution restoration prompt"
+
+
+def test_upscale_workflow_bypasses_lora_when_strength_zero() -> None:
+    workflow = build_upscale_workflow(
+        base_image_comfy_name="bypass.png",
+        original_width=512,
+        original_height=512,
+        seed=1,
+        lora_strength=0.0,
+    )
+
+    assert LORA_NODE not in workflow
+    assert workflow[CACHE_NODE]["inputs"]["model"] == [UNET_NODE, 0]
+    assert workflow[PROMPT_NODE]["inputs"]["clip"] == [CLIP_NODE, 0]
 
 
 def test_upscale_workflow_tracks_non_square_original_aspect_ratio() -> None:

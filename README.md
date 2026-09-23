@@ -114,10 +114,11 @@ Ensure the following models are downloaded and placed in the respective folders 
 | `qwen_image_2.1_int8_convrot.safetensors` | `models/diffusion_models/` or `models/unet/` | Diffusion (UNet) | Qwen Image 2.1 diffusion model |
 | `qwen3vl_8b_int8_convrot.safetensors` | `models/clip/` | CLIP | Qwen 3 VL 8B text/vision encoder |
 | `qwen_image_2.1_vae_bf16.safetensors` | `models/vae/` | VAE | Qwen Image 2.1 VAE |
+| `PornMaster_QI2.1_Low_Resolution_Slider_V1.safetensors` | `models/loras/` | LoRA | Qwen 2.1 Resolution Slider (used at -3.0 weight for upscale) |
 
 ### Generation & Upscaling Architecture
 1. **Qwen Image 2.1 Edit Workflow**: Uses native ComfyUI UNET/CLIP/VAE loaders alongside `TextEncodeQwenImage21`, `QwenImage21Cache` and sampler nodes ([workflow_api.json](workflow_api.json)).
-2. **Qwen 2.1 Prompt-Based 2MP Upscaler**: Uses [workflow_upscale_api.json](workflow_upscale_api.json) with high-detail prompt refinement to upscale existing images to 2 Megapixels without external ESRGAN weights.
+2. **Qwen 2.1 Prompt-Based 2MP Upscaler**: Uses [workflow_upscale_api.json](workflow_upscale_api.json) with high-detail DSLR restoration prompt and resolution slider LoRA (`-3.0` weight) to reconstruct micro-textures and upscale images to 2 Megapixels without external ESRGAN weights.
 
 ---
 
