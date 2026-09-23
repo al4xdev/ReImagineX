@@ -577,9 +577,9 @@
           <div style="display:flex;flex-direction:column;gap:4px;">
             <div style="display:flex;justify-content:space-between;align-items:center;">
               <label style="font-size:11px;color:#9ca3af;font-weight:600;">Target Resolution (Megapixels)</label>
-              <span id="megapixelsVal" style="font-size:12px;font-weight:700;color:#60a5fa;">0.5 MP</span>
+              <span id="megapixelsVal" style="font-size:12px;font-weight:700;color:#60a5fa;">1.0 MP</span>
             </div>
-            <input type="range" id="megapixelsSlider" min="0.2" max="1.0" step="0.1" value="0.5"
+            <input type="range" id="megapixelsSlider" min="0.2" max="1.0" step="0.1" value="1.0"
               oninput="document.getElementById('megapixelsVal').textContent = parseFloat(this.value).toFixed(1) + ' MP'"
               style="width:100%;accent-color:#2563eb;cursor:pointer;">
           </div>
@@ -1990,8 +1990,8 @@ function openPromptModal() {
   document.getElementById('customSizeCheckbox').checked = true;
   toggleCustomSizeOptions();
   document.getElementById('aspectRatioSelect').value = '1:1 (Square)';
-  document.getElementById('megapixelsSlider').value = '0.5';
-  document.getElementById('megapixelsVal').textContent = '0.5 MP';
+  document.getElementById('megapixelsSlider').value = '1.0';
+  document.getElementById('megapixelsVal').textContent = '1.0 MP';
   document.getElementById('bypassLlmCheckbox').checked = false;
   renderRefImagesList();
   promptModal.style.display = 'flex';
@@ -2418,7 +2418,7 @@ async function reprocessCurrent() {
         additional_images: item.additional_images || [],
         custom_size: item.custom_size !== undefined ? item.custom_size : true,
         aspect_ratio: item.aspect_ratio || '1:1 (Square)',
-        megapixels: item.megapixels !== undefined ? item.megapixels : 0.5
+        megapixels: item.megapixels !== undefined ? item.megapixels : 1.0
       })
     });
     if (!res.ok) {
@@ -2458,7 +2458,7 @@ async function retrySingleFailed(item) {
       additional_images: item.additional_images || [],
       custom_size: item.custom_size !== undefined ? item.custom_size : true,
       aspect_ratio: item.aspect_ratio || '1:1 (Square)',
-      megapixels: item.megapixels !== undefined ? item.megapixels : 0.5
+      megapixels: item.megapixels !== undefined ? item.megapixels : 1.0
     };
 
     const res = await fetch('/api/generate', {

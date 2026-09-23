@@ -393,7 +393,7 @@ class PromptRequest(BaseModel):
     additional_images: list[str] = Field(default_factory=list)
     custom_size: bool = True
     aspect_ratio: str = "1:1 (Square)"
-    megapixels: float = 0.5
+    megapixels: float = 1.0
     bypass_llm: bool = False
     llm_provider: Optional[str] = None
 
