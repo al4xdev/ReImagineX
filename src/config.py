@@ -1,9 +1,18 @@
 import json
 import os
+import tempfile
+from threading import RLock
 from typing import Any
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+config_lock = RLock()
+
+
+class LoraConfig(BaseModel):
+    name: str = Field(min_length=1)
+    strength: float = Field(default=1.0, ge=-100.0, le=100.0, allow_inf_nan=False)
 
 
 class Settings(BaseSettings):
@@ -108,6 +117,9 @@ Rules:
     diffusion_model_name: str = "qwen_image_2.1_int8_convrot.safetensors"
     clip_model_name: str = "qwen3vl_8b_int8_convrot.safetensors"
     vae_model_name: str = "qwen_image_2.1_vae_bf16.safetensors"
+    loras: list[LoraConfig] = Field(default_factory=list, max_length=5)
+    sampler_name: str = "er_sde"
+    scheduler: str = "beta"
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -146,6 +158,8 @@ def _apply_persisted_settings(settings: Settings, data: dict[str, Any]) -> bool:
             # Only the old Flux-era default prompt is upgraded; custom prompts survive.
             value = settings.system_prompt
             dirty = True
+        elif field == "loras":
+            value = [LoraConfig.model_validate(item) for item in value]
         setattr(settings, field, value)
 
     # Configs written before the DeepSeek provider existed need a refresh.
@@ -155,36 +169,52 @@ def _apply_persisted_settings(settings: Settings, data: dict[str, Any]) -> bool:
 
 
 def load_settings() -> Settings:
-    settings = Settings()
-    config_path = get_config_path(settings.data_dir)
-    if os.path.exists(config_path):
-        try:
-            with open(config_path, "r", encoding="utf-8") as f:
-                data: Any = json.load(f)
-            if not isinstance(data, dict):
-                raise ValueError("config.json must contain a JSON object")
-            if _apply_persisted_settings(settings, data):
-                save_settings(settings)
-        except Exception as e:
-            print(f"Error loading {config_path}: {e}")
-    return settings
+    with config_lock:
+        settings = Settings()
+        config_path = get_config_path(settings.data_dir)
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    data: Any = json.load(f)
+                if not isinstance(data, dict):
+                    raise ValueError("config.json must contain a JSON object")
+                if _apply_persisted_settings(settings, data):
+                    save_settings(settings)
+            except Exception as e:
+                print(f"Error loading {config_path}: {e}")
+        return settings
 
 def save_settings(settings: Settings) -> None:
-    config_path = get_config_path(settings.data_dir)
-    os.makedirs(os.path.dirname(config_path), exist_ok=True)
-    data = {
-        "system_prompt": settings.system_prompt,
-        "llm_provider": settings.llm_provider,
-        "deepseek_api_key": settings.deepseek_api_key,
-        "deepseek_model": settings.deepseek_model,
-        "openrouter_api_key": settings.openrouter_api_key,
-        "openrouter_models": settings.openrouter_models,
-        "diffusion_model_name": settings.diffusion_model_name,
-        "clip_model_name": settings.clip_model_name,
-        "vae_model_name": settings.vae_model_name,
-        "comfy_url": settings.comfy_url,
-        "comfy_root": settings.comfy_root,
-    }
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
+    with config_lock:
+        config_path = get_config_path(settings.data_dir)
+        config_dir = os.path.dirname(config_path)
+        os.makedirs(config_dir, exist_ok=True)
+        data = {
+            "system_prompt": settings.system_prompt,
+            "llm_provider": settings.llm_provider,
+            "deepseek_api_key": settings.deepseek_api_key,
+            "deepseek_model": settings.deepseek_model,
+            "openrouter_api_key": settings.openrouter_api_key,
+            "openrouter_models": settings.openrouter_models,
+            "diffusion_model_name": settings.diffusion_model_name,
+            "clip_model_name": settings.clip_model_name,
+            "vae_model_name": settings.vae_model_name,
+            "loras": [lora.model_dump() for lora in settings.loras],
+            "sampler_name": settings.sampler_name,
+            "scheduler": settings.scheduler,
+            "comfy_url": settings.comfy_url,
+            "comfy_root": settings.comfy_root,
+        }
+        temp_path = ""
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=config_dir, prefix=".config.json.", delete=False
+            ) as handle:
+                temp_path = handle.name
+                json.dump(data, handle, indent=2, ensure_ascii=False)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, config_path)
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)

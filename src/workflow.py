@@ -4,6 +4,8 @@ import math
 from pathlib import Path
 from typing import Any
 
+from src.config import LoraConfig
+
 Workflow = dict[str, Any]
 
 
@@ -69,6 +71,9 @@ def build_generation_workflow(
     diffusion_model_name: str = "qwen_image_2.1_int8_convrot.safetensors",
     clip_model_name: str = "qwen3vl_8b_int8_convrot.safetensors",
     vae_model_name: str = "qwen_image_2.1_vae_bf16.safetensors",
+    loras: list[LoraConfig] | None = None,
+    sampler_name: str = "er_sde",
+    scheduler: str = "beta",
 ) -> Workflow:
     wf = copy.deepcopy(_get_workflow_base())
 
@@ -80,6 +85,29 @@ def build_generation_workflow(
     if "459:454" in wf and "vae_name" in wf["459:454"]["inputs"]:
         wf["459:454"]["inputs"]["vae_name"] = vae_model_name
 
+    # Chain standard LoraLoader nodes before both the cache and text encoder.
+    model_source = ["459:451", 0]
+    clip_source = ["459:453", 0]
+    for index, lora in enumerate((loras or [])[:5], start=1):
+        if lora.strength == 0:
+            continue
+        node_id = f"generation_lora_{index}"
+        wf[node_id] = {
+            "class_type": "LoraLoader",
+            "inputs": {
+                "lora_name": lora.name,
+                "strength_model": lora.strength,
+                "strength_clip": lora.strength,
+                "model": model_source,
+                "clip": clip_source,
+            },
+            "_meta": {"title": f"Generation LoRA {index}"},
+        }
+        model_source = [node_id, 0]
+        clip_source = [node_id, 1]
+    wf["459:469"]["inputs"]["model"] = model_source
+    wf["459:474"]["inputs"]["clip"] = clip_source
+
     # 2. Text Prompt & Seed
     if "459:474" in wf:
         wf["459:474"]["inputs"]["prompt"] = prompt
@@ -88,6 +116,8 @@ def build_generation_workflow(
         wf["459:458"]["inputs"]["steps"] = steps
         wf["459:458"]["inputs"]["cfg"] = cfg
         wf["459:458"]["inputs"]["denoise"] = denoise
+        wf["459:458"]["inputs"]["sampler_name"] = sampler_name
+        wf["459:458"]["inputs"]["scheduler"] = scheduler
 
     # 3. Base Image (image 1)
     if "470" in wf:
@@ -129,7 +159,7 @@ DEFAULT_UPSCALE_PROMPT = (
     "64K photo, an ultra-high-resolution photograph captured with a professional DSLR camera, "
     "using master-level photographic techniques by a professional photographer."
 )
-DEFAULT_UPSCALE_LORA = "PornMaster_QI2.1_Low_Resolution_Slider_V1.safetensors"
+DEFAULT_UPSCALE_LORA = "qwen21/PornMaster_QI2.1_Low_Resolution_Slider_V1.safetensors"
 DEFAULT_UPSCALE_LORA_STRENGTH = -3.0
 
 
@@ -145,6 +175,8 @@ def build_upscale_workflow(
     diffusion_model_name: str = "qwen_image_2.1_int8_convrot.safetensors",
     clip_model_name: str = "qwen3vl_8b_int8_convrot.safetensors",
     vae_model_name: str = "qwen_image_2.1_vae_bf16.safetensors",
+    sampler_name: str = "er_sde",
+    scheduler: str = "beta",
     lora_name: str = DEFAULT_UPSCALE_LORA,
     lora_strength: float = DEFAULT_UPSCALE_LORA_STRENGTH,
     prompt: str = DEFAULT_UPSCALE_PROMPT,
@@ -197,6 +229,7 @@ def build_upscale_workflow(
         wf["459:458"]["inputs"]["steps"] = steps
         wf["459:458"]["inputs"]["cfg"] = cfg
         wf["459:458"]["inputs"]["denoise"] = denoise
+        wf["459:458"]["inputs"]["sampler_name"] = sampler_name
+        wf["459:458"]["inputs"]["scheduler"] = scheduler
 
     return wf
-

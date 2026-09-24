@@ -6,7 +6,9 @@ from typing import Any
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
+from src.config import LoraConfig
 from src.server import (
     ConfigSchema,
     PromptRequest,
@@ -54,6 +56,14 @@ def test_config_api_never_returns_deepseek_key(tmp_path: Path, monkeypatch: pyte
 
     assert payload["deepseek_configured"] is True
     assert "deepseek_api_key" not in payload
+
+
+def test_config_rejects_more_than_five_loras(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    current = asyncio.run(get_config())
+
+    with pytest.raises(ValidationError):
+        ConfigSchema(**{**current, "loras": [{"name": f"style-{i}.safetensors"} for i in range(6)]})
 
 
 def test_blank_key_update_preserves_existing_secret(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -266,6 +276,8 @@ def test_reprocess_reuses_seed_and_expanded_prompt(monkeypatch: pytest.MonkeyPat
     request = PromptRequest(
         base_id="base", prompt="expanded prompt", original_prompt="original prompt",
         bypass_llm=True, seed=123, additional_images=["ref.png"],
+        loras=[LoraConfig(name="qwen21/style.safetensors", strength=0.65)],
+        sampler_name="euler", scheduler="simple",
     )
     result = asyncio.run(generate(request))
 
@@ -276,3 +288,9 @@ def test_reprocess_reuses_seed_and_expanded_prompt(monkeypatch: pytest.MonkeyPat
     assert submitted[0]["459:458"]["inputs"]["seed"] == 123
     assert submitted[0]["459:474"]["inputs"]["prompt"] == "expanded prompt"
     assert submitted[0]["load_ref_2"]["inputs"]["image"] == "ref.png"
+    assert submitted[0]["generation_lora_1"]["inputs"]["lora_name"] == "qwen21/style.safetensors"
+    assert submitted[0]["459:458"]["inputs"]["sampler_name"] == "euler"
+    assert submitted[0]["459:458"]["inputs"]["scheduler"] == "simple"
+    assert result["loras"] == [{"name": "qwen21/style.safetensors", "strength": 0.65}]
+    assert result["sampler_name"] == "euler"
+    assert result["scheduler"] == "simple"

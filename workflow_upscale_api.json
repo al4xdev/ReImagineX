@@ -86,8 +86,8 @@
       "seed": 440958501633627,
       "steps": 25,
       "cfg": 1,
-      "sampler_name": "euler",
-      "scheduler": "simple",
+      "sampler_name": "er_sde",
+      "scheduler": "beta",
       "denoise": 1,
       "model": [
         "459:469",
@@ -167,7 +167,7 @@
   },
   "459:475": {
     "inputs": {
-      "lora_name": "PornMaster_QI2.1_Low_Resolution_Slider_V1.safetensors",
+      "lora_name": "qwen21/PornMaster_QI2.1_Low_Resolution_Slider_V1.safetensors",
       "strength_model": -3.0,
       "strength_clip": -3.0,
       "model": [

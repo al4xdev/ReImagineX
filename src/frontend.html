@@ -682,6 +682,20 @@
           <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">VAE</label>
           <select id="cfgVaeModel" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
         </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Sampler</label>
+          <select id="cfgSampler" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
+        </div>
+        <div>
+          <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Scheduler</label>
+          <select id="cfgScheduler" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
+        </div>
+      </div>
+
+      <div>
+        <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px;">Generation LoRAs (up to 5)</label>
+        <div id="cfgLoraRows" style="display:flex;flex-direction:column;gap:8px;"></div>
+        <p style="font-size:11px;color:#9ca3af;margin-top:6px;">Applied in order. One strength controls both model and CLIP; zero disables a LoRA.</p>
       </div>
 
       <button id="btnSaveConfig" onclick="saveConfig()"
@@ -1008,7 +1022,8 @@ async function loadFirstPage() {
         if (localItem) {
           const visualFields = ['status', 'filename', 'prompt', 'prompt_original', 'source_prompt',
             'source_prompt_original', 'parent_id',
-            'upscaled', 'megapixels', 'custom_size', 'aspect_ratio', 'additional_images', 'bypass_llm'];
+            'upscaled', 'megapixels', 'custom_size', 'aspect_ratio', 'additional_images', 'bypass_llm',
+            'loras', 'sampler_name', 'scheduler'];
           if (visualFields.some(key => JSON.stringify(localItem[key]) !== JSON.stringify(item[key]))) {
             shouldRender = true;
           }
@@ -1027,6 +1042,9 @@ async function loadFirstPage() {
           localItem.aspect_ratio = item.aspect_ratio;
           localItem.additional_images = item.additional_images;
           localItem.bypass_llm = item.bypass_llm;
+          localItem.loras = item.loras;
+          localItem.sampler_name = item.sampler_name;
+          localItem.scheduler = item.scheduler;
           localItem.seed = item.seed;
           updatePendingCardProgress(item.id, localItem.progress);
         }
@@ -2127,14 +2145,40 @@ async function submitPrompt() {
 let comfyModels = null;
 
 function populateSelect(el, options, selected) {
-  el.innerHTML = '';
-  if (options.length === 0) {
-    el.innerHTML = `<option value="${selected || ''}">${selected || '—'}</option>`;
-    return;
+  el.replaceChildren();
+  const names = [...new Set([...(options || []), ...(selected && !options?.includes(selected) ? [selected] : [])])];
+  for (const name of names.length ? names : ['']) {
+    el.add(new Option(name || '—', name));
   }
-  for (const opt of options) {
-    const sel = opt === selected ? ' selected' : '';
-    el.innerHTML += `<option value="${opt}"${sel}>${opt}</option>`;
+  el.value = selected && names.includes(selected) ? selected : names[0];
+}
+
+function populateLoraRows(savedLoras, availableLoras) {
+  const container = document.getElementById('cfgLoraRows');
+  container.replaceChildren();
+  for (let index = 0; index < 5; index++) {
+    const saved = savedLoras[index] || {};
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:minmax(0,1fr) 88px;gap:8px;';
+    const select = document.createElement('select');
+    select.className = 'cfgLoraName';
+    select.style.cssText = 'min-width:0;width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px;color:#fff;font-size:12px;';
+    select.add(new Option(`LoRA ${index + 1}: none`, ''));
+    for (const name of [...new Set([...(availableLoras || []), ...(saved.name ? [saved.name] : [])])]) {
+      select.add(new Option(name, name));
+    }
+    select.value = saved.name || '';
+    const strength = document.createElement('input');
+    strength.className = 'cfgLoraStrength';
+    strength.type = 'number';
+    strength.min = '-100';
+    strength.max = '100';
+    strength.step = '0.01';
+    strength.value = saved.strength ?? 1;
+    strength.title = 'LoRA strength for model and CLIP';
+    strength.style.cssText = 'width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px;color:#fff;font-size:12px;';
+    row.append(select, strength);
+    container.append(row);
   }
 }
 
@@ -2174,11 +2218,12 @@ async function openConfigModal() {
   document.getElementById('cfgClearOpenRouterApiKey').checked = false;
 
   // Model selects — use fetched models or fall back to saved value
-  if (comfyModels) {
-    populateSelect(document.getElementById('cfgDiffusionModel'), comfyModels.diffusion_models, cfg.diffusion_model_name);
-    populateSelect(document.getElementById('cfgClipModel'), comfyModels.clip_models, cfg.clip_model_name);
-    populateSelect(document.getElementById('cfgVaeModel'), comfyModels.vae_models, cfg.vae_model_name);
-  }
+  populateSelect(document.getElementById('cfgDiffusionModel'), comfyModels?.diffusion_models || [], cfg.diffusion_model_name);
+  populateSelect(document.getElementById('cfgClipModel'), comfyModels?.clip_models || [], cfg.clip_model_name);
+  populateSelect(document.getElementById('cfgVaeModel'), comfyModels?.vae_models || [], cfg.vae_model_name);
+  populateSelect(document.getElementById('cfgSampler'), comfyModels?.samplers || ['er_sde', 'euler'], cfg.sampler_name || 'er_sde');
+  populateSelect(document.getElementById('cfgScheduler'), comfyModels?.schedulers || ['beta', 'simple'], cfg.scheduler || 'beta');
+  populateLoraRows(cfg.loras || [], comfyModels?.loras || []);
 
   configModal.style.display = 'flex';
 }
@@ -2204,8 +2249,15 @@ async function saveConfig() {
   const diffusionModel = selectVal('cfgDiffusionModel');
   const clipModel = selectVal('cfgClipModel');
   const vaeModel = selectVal('cfgVaeModel');
+  const samplerName = selectVal('cfgSampler');
+  const scheduler = selectVal('cfgScheduler');
+  const loras = [...document.querySelectorAll('#cfgLoraRows > div')].map(row => ({
+    name: row.querySelector('.cfgLoraName').value,
+    strength: Number(row.querySelector('.cfgLoraStrength').value)
+  })).filter(lora => lora.name);
 
-  if (!comfyUrl || !diffusionModel) {
+  if (!comfyUrl || !diffusionModel || !samplerName || !scheduler ||
+      loras.some(lora => !Number.isFinite(lora.strength) || lora.strength < -100 || lora.strength > 100)) {
     alert('Please fill in all required fields.');
     return;
   }
@@ -2231,6 +2283,9 @@ async function saveConfig() {
         diffusion_model_name: diffusionModel,
         clip_model_name: clipModel,
         vae_model_name: vaeModel,
+        loras: loras,
+        sampler_name: samplerName,
+        scheduler: scheduler,
         comfy_url: comfyUrl,
         comfy_root: comfyRoot
       })
@@ -2473,6 +2528,9 @@ async function reprocessCurrent() {
         prompt: item.prompt,
         bypass_llm: true,
         original_prompt: item.prompt_original,
+        loras: item.loras || [],
+        sampler_name: item.sampler_name || 'euler',
+        scheduler: item.scheduler || 'simple',
         // Reuse the prompt, references, and size; the server draws a new seed.
         additional_images: item.additional_images || [],
         custom_size: item.custom_size !== undefined ? item.custom_size : true,
@@ -2515,6 +2573,9 @@ async function retrySingleFailed(item) {
       prompt: item.prompt || item.prompt_original,
       bypass_llm: true,
       original_prompt: item.prompt_original,
+      loras: item.loras || [],
+      sampler_name: item.sampler_name || 'euler',
+      scheduler: item.scheduler || 'simple',
       additional_images: item.additional_images || [],
       custom_size: item.custom_size !== undefined ? item.custom_size : true,
       aspect_ratio: item.aspect_ratio || '1:1 (Square)',

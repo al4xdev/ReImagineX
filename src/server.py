@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
-from src.config import load_settings, save_settings
+from src.config import LoraConfig, config_lock, load_settings, save_settings
 from src.state_manager import _load, _save, delete_item_reparent, load_state, state_lock
 from src.upload_processing import MAX_UPLOAD_PIXELS, build_downscale_workflow
 from src.workflow import DEFAULT_UPSCALE_PROMPT, build_generation_workflow, build_upscale_workflow
@@ -487,6 +487,9 @@ class PromptRequest(BaseModel):
     llm_provider: Optional[str] = None
     seed: Optional[int] = Field(default=None, ge=0, le=0xFFFFFFFF)
     original_prompt: Optional[str] = None
+    loras: Optional[list[LoraConfig]] = Field(default=None, max_length=5)
+    sampler_name: Optional[str] = None
+    scheduler: Optional[str] = None
 
 def _clean_llm_response(text: str) -> str:
     """Strip markdown code block fences and trailing whitespace from LLM output."""
@@ -632,6 +635,9 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
 
     # ── ComfyUI Workflow Generation ───────────────────────────────────────────
     seed = req.seed if req.seed is not None else int.from_bytes(os.urandom(4), byteorder="little")
+    loras = req.loras if req.loras is not None else settings.loras
+    sampler_name = req.sampler_name or settings.sampler_name
+    scheduler = req.scheduler or settings.scheduler
     wf = build_generation_workflow(
         prompt=prompt_final,
         base_image_comfy_name=base_item["comfyName"],
@@ -642,7 +648,10 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
         megapixels=req.megapixels,
         diffusion_model_name=settings.diffusion_model_name,
         clip_model_name=settings.clip_model_name,
-        vae_model_name=settings.vae_model_name
+        vae_model_name=settings.vae_model_name,
+        loras=loras,
+        sampler_name=sampler_name,
+        scheduler=scheduler,
     )
 
     async with httpx.AsyncClient() as client:
@@ -665,6 +674,9 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
         "prompt_original": req.original_prompt if req.original_prompt is not None else req.prompt,
         "seed": seed,
         "bypass_llm": req.bypass_llm,
+        "loras": [lora.model_dump() for lora in loras],
+        "sampler_name": sampler_name,
+        "scheduler": scheduler,
         "additional_images": req.additional_images,
         "custom_size": req.custom_size,
         "aspect_ratio": req.aspect_ratio,
@@ -724,6 +736,8 @@ async def upscale_image(req: UpscaleRequest) -> dict[str, Any]:
         diffusion_model_name=settings.diffusion_model_name,
         clip_model_name=settings.clip_model_name,
         vae_model_name=settings.vae_model_name,
+        sampler_name=settings.sampler_name,
+        scheduler=settings.scheduler,
     )
 
     async with httpx.AsyncClient() as client:
@@ -829,6 +843,9 @@ class ConfigSchema(BaseModel):
     diffusion_model_name: str
     clip_model_name: str
     vae_model_name: str
+    loras: list[LoraConfig] = Field(default_factory=list, max_length=5)
+    sampler_name: str = "er_sde"
+    scheduler: str = "beta"
     comfy_url: str
     comfy_root: Optional[str] = None
     # API keys are write-only: omit them (or send an empty string) to keep the
@@ -850,6 +867,9 @@ async def get_config() -> dict[str, Any]:
         "diffusion_model_name": settings.diffusion_model_name,
         "clip_model_name": settings.clip_model_name,
         "vae_model_name": settings.vae_model_name,
+        "loras": [lora.model_dump() for lora in settings.loras],
+        "sampler_name": settings.sampler_name,
+        "scheduler": settings.scheduler,
         "comfy_url": settings.comfy_url,
         "comfy_root": settings.comfy_root,
         "deepseek_configured": bool(settings.deepseek_api_key),
@@ -858,25 +878,29 @@ async def get_config() -> dict[str, Any]:
 
 @app.post("/api/config")
 async def update_config(cfg: ConfigSchema) -> dict[str, str]:
-    settings = load_settings()
-    settings.system_prompt = cfg.system_prompt
-    settings.llm_provider = cfg.llm_provider
-    settings.deepseek_model = cfg.deepseek_model
-    settings.openrouter_models = cfg.openrouter_models
-    settings.diffusion_model_name = cfg.diffusion_model_name
-    settings.clip_model_name = cfg.clip_model_name
-    settings.vae_model_name = cfg.vae_model_name
-    settings.comfy_url = cfg.comfy_url
-    settings.comfy_root = cfg.comfy_root or ""
-    if cfg.clear_deepseek_api_key:
-        settings.deepseek_api_key = ""
-    elif cfg.deepseek_api_key:
-        settings.deepseek_api_key = cfg.deepseek_api_key
-    if cfg.clear_openrouter_api_key:
-        settings.openrouter_api_key = ""
-    elif cfg.openrouter_api_key:
-        settings.openrouter_api_key = cfg.openrouter_api_key
-    save_settings(settings)
+    with config_lock:
+        settings = load_settings()
+        settings.system_prompt = cfg.system_prompt
+        settings.llm_provider = cfg.llm_provider
+        settings.deepseek_model = cfg.deepseek_model
+        settings.openrouter_models = cfg.openrouter_models
+        settings.diffusion_model_name = cfg.diffusion_model_name
+        settings.clip_model_name = cfg.clip_model_name
+        settings.vae_model_name = cfg.vae_model_name
+        settings.loras = cfg.loras
+        settings.sampler_name = cfg.sampler_name
+        settings.scheduler = cfg.scheduler
+        settings.comfy_url = cfg.comfy_url
+        settings.comfy_root = cfg.comfy_root or ""
+        if cfg.clear_deepseek_api_key:
+            settings.deepseek_api_key = ""
+        elif cfg.deepseek_api_key:
+            settings.deepseek_api_key = cfg.deepseek_api_key
+        if cfg.clear_openrouter_api_key:
+            settings.openrouter_api_key = ""
+        elif cfg.openrouter_api_key:
+            settings.openrouter_api_key = cfg.openrouter_api_key
+        save_settings(settings)
     return {"status": "ok"}
 
 @app.get("/api/comfy/models")
@@ -906,6 +930,9 @@ async def get_comfy_models() -> dict[str, list[str]]:
             "clip_models": extract_options("CLIPLoader", "clip_name"),
             "clip_types": extract_options("CLIPLoader", "type"),
             "vae_models": extract_options("VAELoader", "vae_name"),
+            "loras": extract_options("LoraLoader", "lora_name"),
+            "samplers": extract_options("KSampler", "sampler_name"),
+            "schedulers": extract_options("KSampler", "scheduler"),
         }
     except Exception as e:
         print(f"Error fetching ComfyUI models: {e}")
@@ -914,6 +941,9 @@ async def get_comfy_models() -> dict[str, list[str]]:
             "clip_models": [],
             "clip_types": [],
             "vae_models": [],
+            "loras": [],
+            "samplers": [],
+            "schedulers": [],
         }
 
 @app.get("/api/comfy-status")

@@ -3,6 +3,7 @@ from typing import Any
 
 import pytest
 
+from src.config import LoraConfig
 from src.workflow import (
     DEFAULT_UPSCALE_LORA,
     DEFAULT_UPSCALE_LORA_STRENGTH,
@@ -90,9 +91,33 @@ def test_generation_workflow_injects_prompt_and_sampler_settings_into_real_nodes
     assert sampler["inputs"]["steps"] == 12
     assert sampler["inputs"]["cfg"] == 3.75
     assert sampler["inputs"]["denoise"] == 0.6
-    # Settings this function does not own must survive untouched.
-    assert sampler["inputs"]["sampler_name"] == "euler"
-    assert sampler["inputs"]["scheduler"] == "simple"
+    assert sampler["inputs"]["sampler_name"] == "er_sde"
+    assert sampler["inputs"]["scheduler"] == "beta"
+
+
+def test_generation_workflow_chains_five_loras_and_preserves_base() -> None:
+    before = copy.deepcopy(_get_workflow_base())
+    loras = [LoraConfig(name=f"qwen21/style-{i}.safetensors", strength=i / 10) for i in range(1, 6)]
+    workflow = _build_generation(loras=loras, sampler_name="euler", scheduler="simple")
+
+    assert workflow["generation_lora_1"]["inputs"]["model"] == [UNET_NODE, 0]
+    assert workflow["generation_lora_1"]["inputs"]["clip"] == [CLIP_NODE, 0]
+    for index in range(2, 6):
+        assert workflow[f"generation_lora_{index}"]["inputs"]["model"] == [f"generation_lora_{index-1}", 0]
+        assert workflow[f"generation_lora_{index}"]["inputs"]["clip"] == [f"generation_lora_{index-1}", 1]
+    assert workflow[CACHE_NODE]["inputs"]["model"] == ["generation_lora_5", 0]
+    assert workflow[PROMPT_NODE]["inputs"]["clip"] == ["generation_lora_5", 1]
+    assert workflow[SAMPLER_NODE]["inputs"]["sampler_name"] == "euler"
+    assert workflow[SAMPLER_NODE]["inputs"]["scheduler"] == "simple"
+    assert _get_workflow_base() == before
+
+
+def test_generation_workflow_skips_zero_strength_lora() -> None:
+    workflow = _build_generation(loras=[LoraConfig(name="skip.safetensors", strength=0)])
+
+    assert "generation_lora_1" not in workflow
+    assert workflow[CACHE_NODE]["inputs"]["model"] == [UNET_NODE, 0]
+    assert workflow[PROMPT_NODE]["inputs"]["clip"] == [CLIP_NODE, 0]
 
 
 def test_generation_workflow_injects_model_names_into_loader_nodes() -> None:
