@@ -86,8 +86,8 @@
       "seed": 440958501633627,
       "steps": 25,
       "cfg": 1,
-      "sampler_name": "er_sde",
-      "scheduler": "beta",
+      "sampler_name": "euler",
+      "scheduler": "simple",
       "denoise": 1,
       "model": [
         "459:469",

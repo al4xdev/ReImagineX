@@ -736,8 +736,8 @@ async def upscale_image(req: UpscaleRequest) -> dict[str, Any]:
         diffusion_model_name=settings.diffusion_model_name,
         clip_model_name=settings.clip_model_name,
         vae_model_name=settings.vae_model_name,
-        sampler_name=settings.sampler_name,
-        scheduler=settings.scheduler,
+        sampler_name="euler",
+        scheduler="simple",
     )
 
     async with httpx.AsyncClient() as client:
