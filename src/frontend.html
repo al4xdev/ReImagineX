@@ -690,6 +690,15 @@
           <label style="display:block;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">Scheduler</label>
           <select id="cfgScheduler" style="width:100%;background:#1f2937;border:1px solid #374151;border-radius:8px;padding:8px 10px;color:#fff;font-size:13px;outline:none;"></select>
         </div>
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <label style="font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.1em;">Default CFG</label>
+            <span id="cfgDefaultVal" style="font-size:12px;font-weight:700;color:#60a5fa;">1.0</span>
+          </div>
+          <input type="range" id="cfgDefaultSlider" min="0.0" max="20.0" step="0.1" value="1.0"
+            oninput="document.getElementById('cfgDefaultVal').textContent = parseFloat(this.value).toFixed(1)"
+            style="width:100%;accent-color:#2563eb;cursor:pointer;margin-top:6px;">
+        </div>
       </div>
 
       <div>
@@ -1023,7 +1032,7 @@ async function loadFirstPage() {
           const visualFields = ['status', 'filename', 'prompt', 'prompt_original', 'source_prompt',
             'source_prompt_original', 'parent_id',
             'upscaled', 'megapixels', 'custom_size', 'aspect_ratio', 'additional_images', 'bypass_llm',
-            'loras', 'sampler_name', 'scheduler'];
+            'loras', 'sampler_name', 'scheduler', 'cfg'];
           if (visualFields.some(key => JSON.stringify(localItem[key]) !== JSON.stringify(item[key]))) {
             shouldRender = true;
           }
@@ -1045,6 +1054,7 @@ async function loadFirstPage() {
           localItem.loras = item.loras;
           localItem.sampler_name = item.sampler_name;
           localItem.scheduler = item.scheduler;
+          localItem.cfg = item.cfg;
           localItem.seed = item.seed;
           updatePendingCardProgress(item.id, localItem.progress);
         }
@@ -2223,6 +2233,9 @@ async function openConfigModal() {
   populateSelect(document.getElementById('cfgVaeModel'), comfyModels?.vae_models || [], cfg.vae_model_name);
   populateSelect(document.getElementById('cfgSampler'), comfyModels?.samplers || ['er_sde', 'euler'], cfg.sampler_name || 'er_sde');
   populateSelect(document.getElementById('cfgScheduler'), comfyModels?.schedulers || ['beta', 'simple'], cfg.scheduler || 'beta');
+  const defaultCfg = cfg.cfg !== undefined ? Number(cfg.cfg) : 1.0;
+  document.getElementById('cfgDefaultSlider').value = defaultCfg;
+  document.getElementById('cfgDefaultVal').textContent = defaultCfg.toFixed(1);
   populateLoraRows(cfg.loras || [], comfyModels?.loras || []);
 
   configModal.style.display = 'flex';
@@ -2251,6 +2264,7 @@ async function saveConfig() {
   const vaeModel = selectVal('cfgVaeModel');
   const samplerName = selectVal('cfgSampler');
   const scheduler = selectVal('cfgScheduler');
+  const defaultCfg = parseFloat(document.getElementById('cfgDefaultSlider').value) || 1.0;
   const loras = [...document.querySelectorAll('#cfgLoraRows > div')].map(row => ({
     name: row.querySelector('.cfgLoraName').value,
     strength: Number(row.querySelector('.cfgLoraStrength').value)
@@ -2286,6 +2300,7 @@ async function saveConfig() {
         loras: loras,
         sampler_name: samplerName,
         scheduler: scheduler,
+        cfg: defaultCfg,
         comfy_url: comfyUrl,
         comfy_root: comfyRoot
       })

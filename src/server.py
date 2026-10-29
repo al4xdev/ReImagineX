@@ -483,6 +483,7 @@ class PromptRequest(BaseModel):
     custom_size: bool = True
     aspect_ratio: str = "1:1 (Square)"
     megapixels: float = 1.0
+    cfg: Optional[float] = Field(default=None, ge=0.0, le=100.0)
     bypass_llm: bool = False
     llm_provider: Optional[str] = None
     seed: Optional[int] = Field(default=None, ge=0, le=0xFFFFFFFF)
@@ -638,6 +639,7 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
     loras = req.loras if req.loras is not None else settings.loras
     sampler_name = req.sampler_name or settings.sampler_name
     scheduler = req.scheduler or settings.scheduler
+    cfg_val = req.cfg if req.cfg is not None else settings.cfg
     wf = build_generation_workflow(
         prompt=prompt_final,
         base_image_comfy_name=base_item["comfyName"],
@@ -646,6 +648,7 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
         custom_size=req.custom_size,
         aspect_ratio=req.aspect_ratio,
         megapixels=req.megapixels,
+        cfg=cfg_val,
         diffusion_model_name=settings.diffusion_model_name,
         clip_model_name=settings.clip_model_name,
         vae_model_name=settings.vae_model_name,
@@ -677,6 +680,7 @@ async def generate(req: PromptRequest) -> dict[str, Any]:
         "loras": [lora.model_dump() for lora in loras],
         "sampler_name": sampler_name,
         "scheduler": scheduler,
+        "cfg": cfg_val,
         "additional_images": req.additional_images,
         "custom_size": req.custom_size,
         "aspect_ratio": req.aspect_ratio,
@@ -846,6 +850,7 @@ class ConfigSchema(BaseModel):
     loras: list[LoraConfig] = Field(default_factory=list, max_length=5)
     sampler_name: str = "er_sde"
     scheduler: str = "beta"
+    cfg: float = Field(default=1.0, ge=0.0, le=100.0)
     comfy_url: str
     comfy_root: Optional[str] = None
     # API keys are write-only: omit them (or send an empty string) to keep the
@@ -870,6 +875,7 @@ async def get_config() -> dict[str, Any]:
         "loras": [lora.model_dump() for lora in settings.loras],
         "sampler_name": settings.sampler_name,
         "scheduler": settings.scheduler,
+        "cfg": settings.cfg,
         "comfy_url": settings.comfy_url,
         "comfy_root": settings.comfy_root,
         "deepseek_configured": bool(settings.deepseek_api_key),
@@ -890,6 +896,7 @@ async def update_config(cfg: ConfigSchema) -> dict[str, str]:
         settings.loras = cfg.loras
         settings.sampler_name = cfg.sampler_name
         settings.scheduler = cfg.scheduler
+        settings.cfg = cfg.cfg
         settings.comfy_url = cfg.comfy_url
         settings.comfy_root = cfg.comfy_root or ""
         if cfg.clear_deepseek_api_key:

@@ -19,3 +19,7 @@ galeria_dados/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
+
+# Logs
+*.log
+

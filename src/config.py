@@ -120,6 +120,7 @@ Rules:
     loras: list[LoraConfig] = Field(default_factory=list, max_length=5)
     sampler_name: str = "er_sde"
     scheduler: str = "beta"
+    cfg: float = Field(default=1.0, ge=0.0, le=100.0)
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -130,19 +131,12 @@ Rules:
 def get_config_path(data_dir: str) -> str:
     return os.path.join(data_dir, "config.json")
 
-# Checkpoint fields that must reference a Qwen model after the Qwen Image migration.
-_QWEN_CHECKPOINT_FIELDS: tuple[str, ...] = (
-    "diffusion_model_name",
-    "clip_model_name",
-    "vae_model_name",
-)
-
 # Marker identifying the pre-Qwen (Flux) default system prompt.
 _LEGACY_PROMPT_MARKER = "Flux"
 
 
 def _apply_persisted_settings(settings: Settings, data: dict[str, Any]) -> bool:
-    """Apply saved config values, migrating legacy pre-Qwen settings.
+    """Apply saved config values.
 
     Returns True when migration changed something that must be written back.
     """
@@ -150,11 +144,7 @@ def _apply_persisted_settings(settings: Settings, data: dict[str, Any]) -> bool:
     for field, value in data.items():
         if not hasattr(settings, field):
             continue
-        if field in _QWEN_CHECKPOINT_FIELDS and "qwen" not in str(value).lower():
-            # Legacy checkpoint from before the Qwen migration: fall back to default.
-            value = getattr(settings, field)
-            dirty = True
-        elif field == "system_prompt" and _LEGACY_PROMPT_MARKER in str(value):
+        if field == "system_prompt" and _LEGACY_PROMPT_MARKER in str(value):
             # Only the old Flux-era default prompt is upgraded; custom prompts survive.
             value = settings.system_prompt
             dirty = True
@@ -202,6 +192,7 @@ def save_settings(settings: Settings) -> None:
             "loras": [lora.model_dump() for lora in settings.loras],
             "sampler_name": settings.sampler_name,
             "scheduler": settings.scheduler,
+            "cfg": settings.cfg,
             "comfy_url": settings.comfy_url,
             "comfy_root": settings.comfy_root,
         }

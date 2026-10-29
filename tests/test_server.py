@@ -197,7 +197,7 @@ def test_deepseek_prompt_expansion_disables_reasoning_and_uses_temperature_one(
 
 def test_album_keeps_root_first_and_other_images_newest_first(monkeypatch: pytest.MonkeyPatch) -> None:
     # Stored state is newest first; the newest image can belong to an older branch.
-    state = [
+    state: list[dict[str, Any]] = [
         {"id": "new-grandchild", "parent_id": "older-child", "status": "completed"},
         {"id": "other-root-child", "parent_id": "other-root", "status": "completed"},
         {"id": "new-child", "parent_id": "root", "status": "completed"},
@@ -216,7 +216,7 @@ def test_album_keeps_root_first_and_other_images_newest_first(monkeypatch: pytes
 
 
 def test_legacy_upscale_exposes_source_prompt_for_frontend(monkeypatch: pytest.MonkeyPatch) -> None:
-    state = [
+    state: list[dict[str, Any]] = [
         {"id": "upscaled", "parent_id": "original", "upscaled": True,
          "prompt": "technical upscale prompt", "prompt_original": "Upscale (2MP)"},
         {"id": "original", "parent_id": "root", "prompt": "expanded image prompt",
@@ -277,7 +277,7 @@ def test_reprocess_reuses_seed_and_expanded_prompt(monkeypatch: pytest.MonkeyPat
         base_id="base", prompt="expanded prompt", original_prompt="original prompt",
         bypass_llm=True, seed=123, additional_images=["ref.png"],
         loras=[LoraConfig(name="qwen21/style.safetensors", strength=0.65)],
-        sampler_name="euler", scheduler="simple",
+        sampler_name="euler", scheduler="simple", cfg=2.5,
     )
     result = asyncio.run(generate(request))
 
@@ -291,6 +291,21 @@ def test_reprocess_reuses_seed_and_expanded_prompt(monkeypatch: pytest.MonkeyPat
     assert submitted[0]["generation_lora_1"]["inputs"]["lora_name"] == "qwen21/style.safetensors"
     assert submitted[0]["459:458"]["inputs"]["sampler_name"] == "euler"
     assert submitted[0]["459:458"]["inputs"]["scheduler"] == "simple"
+    assert submitted[0]["459:458"]["inputs"]["cfg"] == 2.5
     assert result["loras"] == [{"name": "qwen21/style.safetensors", "strength": 0.65}]
     assert result["sampler_name"] == "euler"
     assert result["scheduler"] == "simple"
+    assert result["cfg"] == 2.5
+
+
+def test_config_endpoint_updates_and_reads_cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+    current = asyncio.run(get_config())
+    assert current["cfg"] == 1.0
+
+    request = ConfigSchema(**{**current, "cfg": 4.2})
+    asyncio.run(update_config(request))
+
+    updated = asyncio.run(get_config())
+    assert updated["cfg"] == 4.2
+
